@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>FLY - P2P Multiplayer Flight Game</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            color: white;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        /* Lobby Screen */
+        #lobby {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            z-index: 1000;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+        }
+
+        #lobby.hidden {
+            display: none;
+        }
+
+        .lobby-header {
+            text-align: center;
+            padding: 20px;
+            background: rgba(0,0,0,0.3);
+        }
+
+        .lobby-header h1 {
+            font-size: 3em;
+            background: linear-gradient(45deg, #00d4ff, #00ff88);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-shadow: 0 0 30px rgba(0,212,255,0.5);
+        }
+
+        .lobby-header p {
+            color: #aaa;
+            margin-top: 5px;
+        }
+
+        /* Ad Banner Top */
+        .ad-banner {
+            background: rgba(255,255,255,0.1);
+            border: 2px dashed rgba(255,255,255,0.3);
+            text-align: center;
+            padding: 15px;
+            color: #888;
+            font-size: 14px;
+        }
+
+        .ad-banner.top {
+            border-radius: 0;
+        }
+
+        .ad-banner.bottom {
+            margin-top: auto;
+        }
+
+        .lobby-content {
+            flex: 1;
+            display: flex;
+            padding: 20px;
+            gap: 20px;
+            overflow: hidden;
+        }
+
+        /* Left Panel - Player Setup */
+        .player-setup {
+            width: 300px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 15px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .player-setup h2 {
+            color: #00d4ff;
+            font-size: 1.2em;
+            border-bottom: 1px solid rgba(0,212,255,0.3);
+            padding-bottom: 10px;
+        }
+
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .input-group label {
+            color: #aaa;
+            font-size: 12px;
+        }
+
+        .input-group input, .input-group select {
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 8px;
+            padding: 10px;
+            color: white;
+            font-size: 14px;
+        }
+
+        .input-group input:focus, .input-group select:focus {
+            outline: none;
+            border-color: #00d4ff;
+        }
+
+        .aircraft-preview {
+            background: rgba(0,0,0,0.3);
+            border-radius: 10px;
+            padding: 15px;
+            text-align: center;
+        }
+
+        .aircraft-preview canvas {
+            width: 100%;
+            height: 150px;
+            border-radius: 8px;
+        }
+
+        .aircraft-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 10px;
+            font-size: 12px;
+        }
+
+        .stat {
+            background: rgba(255,255,255,0.05);
+            padding: 8px;
+            border-radius: 5px;
+        }
+
+        .stat-label {
+            color: #888;
+        }
+
+        .stat-value {
+            color: #00ff88;
+            font-weight: bold;
+        }
+
+        /* Center Panel - Room List */
+        .room-list-panel {
+            flex: 1;
+            background: rgba(0,0,0,0.3);
+            border-radius: 15px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .room-list-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .room-list-header h2 {
+            color: #00d4ff;
+        }
+
+        .btn {
+            background: linear-gradient(45deg, #00d4ff, #00ff88);
+            border: none;
+            border-radius: 8px;
+            padding: 10px 20px;
+            color: #1a1a2e;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 20px rgba(0,212,255,0.5);
+        }
+
+        .btn.secondary {
+            background: rgba(255,255,255,0.1);
+            color: white;
+        }
+
+        .btn.secondary:hover {
+            background: rgba(255,255,255,0.2);
+        }
+
+        .room-list {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .room-item {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 10px;
+            padding: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .room-item:hover {
+            background: rgba(0,212,255,0.1);
+            border-color: #00d4ff;
+        }
+
+        .room-info h3 {
+            color: white;
+            margin-bottom: 5px;
+        }
+
+        .room-info p {
+            color: #888;
+            font-size: 12px;
+        }
+
+        .room-players {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .player-count {
+            background: rgba(0,255,136,0.2);
+            color: #00ff88;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 12px;
+        }
+
+        .no-rooms {
+            text-align: center;
+            color: #666;
+            padding: 40px;
+        }
+
+        /* Right Panel - Ad Space */
+        .ad-sidebar {
+            width: 200px;
+            background: rgba(255,255,255,0.05);
+            border: 2px dashed rgba(255,255,255,0.2);
+            border-radius: 15px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: #666;
+            font-size: 14px;
+        }
+
+        /* Create Room Modal */
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+
+        .modal.hidden {
+            display: none;
+        }
+
+        .modal-content {
+            background: linear-gradient(135deg, #1a1a2e, #16213e);
+            border-radius: 20px;
+            padding: 30px;
+            width: 400px;
+            border: 1px solid rgba(0,212,255,0.3);
+        }
+
+        .modal-content h2 {
+            color: #00d4ff;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .modal-buttons .btn {
+            flex: 1;
+        }
+
+        /* Game Screen */
+        #game-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: none;
+        }
+
+        #game-container.active {
+            display: block;
+        }
+
+        #game-canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Game HUD */
+        .hud {
+            position: fixed;
+            pointer-events: none;
+        }
+
+        .hud * {
+            pointer-events: auto;
+        }
+
+        /* Top HUD */
+        .hud-top {
+            top: 0;
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: space-between;
+            padding: 10px;
+        }
+
+        .hud-top .ad-banner {
+            flex: 1;
+            max-width: 728px;
+            margin: 0 auto;
+            height: 60px;
+            background: rgba(0,0,0,0.5);
+            border-radius: 10px;
+        }
+
+        /* Left HUD - Player Info */
+        .hud-left {
+            top: 80px;
+            left: 10px;
+        }
+
+        .player-stats {
+            background: rgba(0,0,0,0.7);
+            border-radius: 10px;
+            padding: 15px;
+            min-width: 200px;
+        }
+
+        .health-bar {
+            height: 20px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+
+        .health-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ff4444, #00ff88);
+            width: 100%;
+            transition: width 0.3s;
+        }
+
+        .speed-indicator, .altitude-indicator {
+            display: flex;
+            justify-content: space-between;
+            margin: 5px 0;
+            font-size: 14px;
+        }
+
+        /* Right HUD - Minimap & Leaderboard */
+        .hud-right {
+            top: 80px;
+            right: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .minimap {
+            width: 180px;
+            height: 180px;
+            background: rgba(0,0,0,0.7);
+            border-radius: 50%;
+            border: 3px solid rgba(0,212,255,0.5);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .minimap-canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        .leaderboard {
+            background: rgba(0,0,0,0.7);
+            border-radius: 10px;
+            padding: 15px;
+            min-width: 180px;
+        }
+
+        .leaderboard h3 {
+            color: #00d4ff;
+            font-size: 12px;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+        }
+
+        .leaderboard-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+            font-size: 12px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .leaderboard-item.self {
+            color: #00ff88;
+        }
+
+        /* Bottom HUD - Controls Info */
+        .hud-bottom {
+            bottom: 10px;
+            left: 10px;
+            right: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+        }
+
+        .controls-hint {
+            background: rgba(0,0,0,0.7);
+            border-radius: 10px;
+            padding: 10px 15px;
+            font-size: 12px;
+            color: #888;
+        }
+
+        .controls-hint span {
+            color: #00d4ff;
+        }
+
+        .game-timer {
+            background: rgba(0,0,0,0.7);
+            border-radius: 10px;
+            padding: 10px 20px;
+            font-size: 24px;
+            font-weight: bold;
+            color: #00ff88;
+        }
+
+        .exit-btn {
+            background: rgba(255,68,68,0.8);
+            border: none;
+            border-radius: 10px;
+            padding: 10px 20px;
+            color: white;
+            cursor: pointer;
+        }
+
+        /* Chat */
+        .chat-container {
+            position: fixed;
+            bottom: 60px;
+            left: 10px;
+            width: 300px;
+        }
+
+        .chat-messages {
+            background: rgba(0,0,0,0.5);
+            border-radius: 10px 10px 0 0;
+            padding: 10px;
+            max-height: 150px;
+            overflow-y: auto;
+            font-size: 12px;
+        }
+
+        .chat-message {
+            margin: 5px 0;
+        }
+
+        .chat-message .name {
+            color: #00d4ff;
+        }
+
+        .chat-input-container {
+            display: flex;
+        }
+
+        .chat-input {
+            flex: 1;
+            background: rgba(0,0,0,0.7);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 0 0 0 10px;
+            padding: 8px;
+            color: white;
+        }
+
+        .chat-send {
+            background: #00d4ff;
+            border: none;
+            border-radius: 0 0 10px 0;
+            padding: 8px 15px;
+            color: #1a1a2e;
+            cursor: pointer;
+        }
+
+        /* Mobile Controls */
+        .mobile-controls {
+            display: none;
+            position: fixed;
+            bottom: 20px;
+            left: 0;
+            right: 0;
+            padding: 0 20px;
+            justify-content: space-between;
+        }
+
+        .joystick {
+            width: 120px;
+            height: 120px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 50%;
+            border: 2px solid rgba(255,255,255,0.3);
+            position: relative;
+        }
+
+        .joystick-knob {
+            width: 50px;
+            height: 50px;
+            background: rgba(0,212,255,0.5);
+            border-radius: 50%;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .mobile-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .mobile-btn {
+            width: 60px;
+            height: 60px;
+            background: rgba(255,255,255,0.1);
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            color: white;
+            font-size: 12px;
+        }
+
+        @media (max-width: 768px) {
+            .lobby-content {
+                flex-direction: column;
+            }
+
+            .player-setup, .ad-sidebar {
+                width: 100%;
+            }
+
+            .ad-sidebar {
+                height: 100px;
+            }
+
+            .mobile-controls {
+                display: flex;
+            }
+
+            .controls-hint {
+                display: none;
+            }
+        }
+
+        /* Connection Status */
+        .connection-status {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            z-index: 3000;
+        }
+
+        .connection-status.connected {
+            background: rgba(0,255,136,0.2);
+            color: #00ff88;
+        }
+
+        .connection-status.connecting {
+            background: rgba(255,200,0,0.2);
+            color: #ffc800;
+        }
+
+        .connection-status.disconnected {
+            background: rgba(255,68,68,0.2);
+            color: #ff4444;
+        }
+
+        /* Loading */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.9);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 5000;
+        }
+
+        .loading-overlay.hidden {
+            display: none;
+        }
+
+        .loading-spinner {
+            width: 60px;
+            height: 60px;
+            border: 3px solid rgba(0,212,255,0.3);
+            border-top-color: #00d4ff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            margin-top: 20px;
+            color: #00d4ff;
+        }
+    </style>
+</head>
+<body>
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">Loading FLY...</div>
+    </div>
+
+    <!-- Connection Status -->
+    <div id="connection-status" class="connection-status connecting">Connecting...</div>
+
+    <!-- Lobby Screen -->
+    <div id="lobby">
+        <div class="lobby-header">
+            <h1>FLY</h1>
+            <p>P2P Multiplayer Flight Game</p>
+        </div>
+
+        <div class="ad-banner top">
+            <span>[ AD SPACE - 728x90 Leaderboard ]</span>
+        </div>
+
+        <div class="lobby-content">
+            <!-- Left Panel - Player Setup -->
+            <div class="player-setup">
+                <h2>Player Setup</h2>
+
+                <div class="input-group">
+                    <label>Callsign</label>
+                    <input type="text" id="player-name" placeholder="Enter your callsign" maxlength="15">
+                </div>
+
+                <div class="input-group">
+                    <label>Aircraft</label>
+                    <select id="aircraft-select">
+                        <option value="cessna">Cessna 172</option>
+                        <option value="jet">Fighter Jet</option>
+                        <option value="cyberpink">Cyberpink</option>
+                    </select>
+                </div>
+
+                <div class="aircraft-preview">
+                    <canvas id="preview-canvas"></canvas>
+                    <div class="aircraft-stats">
+                        <div class="stat">
+                            <div class="stat-label">Max Speed</div>
+                            <div class="stat-value" id="stat-speed">140 kts</div>
+                        </div>
+                        <div class="stat">
+                            <div class="stat-label">Max Alt</div>
+                            <div class="stat-value" id="stat-alt">14,000 ft</div>
+                        </div>
+                        <div class="stat">
+                            <div class="stat-label">Agility</div>
+                            <div class="stat-value" id="stat-agility">Medium</div>
+                        </div>
+                        <div class="stat">
+                            <div class="stat-label">Weapons</div>
+                            <div class="stat-value" id="stat-weapons">None</div>
+                        </div>
+                    </div>
+                </div>
+
+                <button class="btn" id="quick-play-btn">Quick Play</button>
+            </div>
+
+            <!-- Center Panel - Room List -->
+            <div class="room-list-panel">
+                <div class="room-list-header">
+                    <h2>Game Rooms</h2>
+                    <div>
+                        <button class="btn secondary" id="refresh-btn">Refresh</button>
+                        <button class="btn" id="create-room-btn">Create Room</button>
+                    </div>
+                </div>
+
+                <div class="room-list" id="room-list">
+                    <div class="no-rooms">
+                        <p>No rooms available</p>
+                        <p>Create a new room or use Quick Play!</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel - Ad Space -->
+            <div class="ad-sidebar">
+                <p>[ AD SPACE ]</p>
+                <p>160x600</p>
+                <p>Skyscraper</p>
+            </div>
+        </div>
+
+        <div class="ad-banner bottom">
+            <span>[ AD SPACE - 728x90 Leaderboard ]</span>
+        </div>
+    </div>
+
+    <!-- Create Room Modal -->
+    <div id="create-room-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Create Room</h2>
+            <div class="input-group">
+                <label>Room Name</label>
+                <input type="text" id="room-name" placeholder="My Awesome Room" maxlength="30">
+            </div>
+            <div class="input-group">
+                <label>Max Players</label>
+                <select id="max-players">
+                    <option value="4">4 Players</option>
+                    <option value="8" selected>8 Players</option>
+                    <option value="12">12 Players</option>
+                    <option value="16">16 Players</option>
+                </select>
+            </div>
+            <div class="input-group">
+                <label>Game Mode</label>
+                <select id="game-mode">
+                    <option value="ffa">Free For All</option>
+                    <option value="team">Team Deathmatch</option>
+                    <option value="race">Air Race</option>
+                </select>
+            </div>
+            <div class="modal-buttons">
+                <button class="btn secondary" id="cancel-create">Cancel</button>
+                <button class="btn" id="confirm-create">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Game Container -->
+    <div id="game-container">
+        <canvas id="game-canvas"></canvas>
+
+        <!-- HUD Top -->
+        <div class="hud hud-top">
+            <div class="ad-banner">[ AD SPACE - 728x60 ]</div>
+        </div>
+
+        <!-- HUD Left -->
+        <div class="hud hud-left">
+            <div class="player-stats">
+                <div class="health-bar">
+                    <div class="health-fill" id="health-fill"></div>
+                </div>
+                <div class="speed-indicator">
+                    <span>Speed</span>
+                    <span id="speed-value">0 kts</span>
+                </div>
+                <div class="altitude-indicator">
+                    <span>Altitude</span>
+                    <span id="altitude-value">0 ft</span>
+                </div>
+                <div class="altitude-indicator">
+                    <span>Kills / Deaths</span>
+                    <span id="kd-value">0 / 0</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- HUD Right -->
+        <div class="hud hud-right">
+            <div class="minimap">
+                <canvas class="minimap-canvas" id="minimap-canvas"></canvas>
+            </div>
+            <div class="leaderboard">
+                <h3>Leaderboard</h3>
+                <div id="leaderboard-list"></div>
+            </div>
+        </div>
+
+        <!-- Chat -->
+        <div class="chat-container">
+            <div class="chat-messages" id="chat-messages"></div>
+            <div class="chat-input-container">
+                <input type="text" class="chat-input" id="chat-input" placeholder="Press Enter to chat...">
+                <button class="chat-send" id="chat-send">Send</button>
+            </div>
+        </div>
+
+        <!-- HUD Bottom -->
+        <div class="hud hud-bottom">
+            <div class="controls-hint">
+                <span>Arrow Keys</span> - Fly | <span>W/S</span> - Throttle | <span>Space</span> - Fire | <span>V</span> - Camera | <span>Tab</span> - Scores
+            </div>
+            <div class="game-timer" id="game-timer">15:00</div>
+            <button class="exit-btn" id="exit-game">Exit Game</button>
+        </div>
+
+        <!-- Mobile Controls -->
+        <div class="mobile-controls" id="mobile-controls">
+            <div class="joystick" id="joystick-left">
+                <div class="joystick-knob" id="joystick-knob-left"></div>
+            </div>
+            <div class="mobile-buttons">
+                <button class="mobile-btn" id="fire-btn">FIRE</button>
+                <button class="mobile-btn" id="boost-btn">BOOST</button>
+            </div>
+            <div class="joystick" id="joystick-right">
+                <div class="joystick-knob" id="joystick-knob-right"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="js/game.js"></script>
+</body>
+</html>
