@@ -1,10 +1,9 @@
-// FLY - P2P Multiplayer Flight Game
-// Using PeerJS for P2P connectivity and Three.js for 3D graphics
+// FLY - P2P Multiplayer Flight Combat
+// Enhanced version with better graphics, sound, and gameplay
 
 class FlyGame {
     constructor() {
-        // Game state
-        this.state = 'lobby'; // lobby, connecting, playing
+        this.state = 'lobby';
         this.peer = null;
         this.peerId = null;
         this.connections = new Map();
@@ -12,16 +11,15 @@ class FlyGame {
         this.currentRoom = null;
         this.rooms = new Map();
 
-        // Player data
         this.player = {
             id: null,
             name: 'Pilot',
             aircraft: 'cessna',
-            position: { x: 0, y: 100, z: 0 },
-            rotation: { x: 0, y: 0, z: 0 },
-            velocity: { x: 0, y: 0, z: 0 },
+            position: new THREE.Vector3(0, 100, 0),
+            rotation: new THREE.Euler(0, 0, 0, 'YXZ'),
+            velocity: new THREE.Vector3(),
             speed: 0,
-            throttle: 0.5,
+            throttle: 0.3,
             health: 100,
             kills: 0,
             deaths: 0
@@ -29,100 +27,155 @@ class FlyGame {
 
         this.otherPlayers = new Map();
 
-        // Aircraft stats
         this.aircraftStats = {
-            cessna: { maxSpeed: 140, maxAlt: 14000, agility: 'Medium', weapons: 'None', color: 0xffffff },
-            jet: { maxSpeed: 1500, maxAlt: 50000, agility: 'High', weapons: 'Missiles', color: 0x444444 },
-            cyberpink: { maxSpeed: 800, maxAlt: 30000, agility: 'High', weapons: 'Lasers', color: 0xff00ff }
+            cessna: {
+                maxSpeed: 140, maxAlt: 14000, agility: 50, weapons: 0,
+                color: 0xffffff, accentColor: 0x0066cc
+            },
+            jet: {
+                maxSpeed: 1500, maxAlt: 50000, agility: 80, weapons: 100,
+                color: 0x444444, accentColor: 0xff0000
+            },
+            cyberpink: {
+                maxSpeed: 800, maxAlt: 30000, agility: 90, weapons: 80,
+                color: 0xff00ff, accentColor: 0x00ffff
+            }
         };
 
-        // Three.js components
         this.scene = null;
         this.camera = null;
         this.renderer = null;
         this.playerMesh = null;
         this.otherPlayerMeshes = new Map();
+        this.projectiles = [];
+        this.explosions = [];
 
-        // Controls
         this.keys = {};
         this.cameraMode = 'third';
+        this.cameraOffset = new THREE.Vector3(0, 15, -50);
 
-        // Game loop
         this.lastUpdate = 0;
-        this.gameTime = 15 * 60; // 15 minutes
+        this.gameTime = 15 * 60;
+        this.lastBroadcast = 0;
 
-        // Initialize
+        // Audio
+        this.audioCtx = null;
+        this.sounds = {};
+
         this.init();
     }
 
     init() {
         this.setupEventListeners();
         this.initPeerJS();
-        this.initPreviewCanvas();
+        this.initAudio();
         this.hideLoading();
     }
 
-    // ==================== PeerJS Setup ====================
+    // ==================== AUDIO ====================
+
+    initAudio() {
+        this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+
+    playSound(type) {
+        if (!this.audioCtx) return;
+
+        const ctx = this.audioCtx;
+        const now = ctx.currentTime;
+
+        if (type === 'engine') {
+            // Continuous engine sound
+        } else if (type === 'fire') {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(200, now);
+            osc.frequency.exponentialRampToValueAtTime(50, now + 0.2);
+            gain.gain.setValueAtTime(0.3, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now);
+            osc.stop(now + 0.2);
+        } else if (type === 'explosion') {
+            const noise = ctx.createBufferSource();
+            const buffer = ctx.createBuffer(1, ctx.sampleRate * 0.5, ctx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < data.length; i++) {
+                data[i] = Math.random() * 2 - 1;
+            }
+            noise.buffer = buffer;
+
+            const filter = ctx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(1000, now);
+            filter.frequency.exponentialRampToValueAtTime(100, now + 0.5);
+
+            const gain = ctx.createGain();
+            gain.gain.setValueAtTime(0.5, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+
+            noise.connect(filter);
+            filter.connect(gain);
+            gain.connect(ctx.destination);
+            noise.start(now);
+        } else if (type === 'hit') {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(400, now);
+            osc.frequency.exponentialRampToValueAtTime(100, now + 0.1);
+            gain.gain.setValueAtTime(0.2, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now);
+            osc.stop(now + 0.1);
+        }
+    }
+
+    // ==================== PEERJS ====================
 
     initPeerJS() {
-        this.updateConnectionStatus('connecting', 'Connecting to network...');
+        this.updateConnectionStatus('connecting', 'Connecting');
 
-        // Generate random peer ID
         const randomId = 'fly_' + Math.random().toString(36).substr(2, 9);
 
-        this.peer = new Peer(randomId, {
-            debug: 1
-        });
+        this.peer = new Peer(randomId, { debug: 0 });
 
         this.peer.on('open', (id) => {
             this.peerId = id;
             this.player.id = id;
-            this.updateConnectionStatus('connected', 'Connected');
-            console.log('PeerJS connected with ID:', id);
-
-            // Start room discovery
+            this.updateConnectionStatus('connected', 'Online');
+            console.log('Connected:', id);
             this.discoverRooms();
         });
 
-        this.peer.on('connection', (conn) => {
-            this.handleIncomingConnection(conn);
-        });
-
+        this.peer.on('connection', (conn) => this.handleIncomingConnection(conn));
         this.peer.on('error', (err) => {
-            console.error('PeerJS error:', err);
-            this.updateConnectionStatus('disconnected', 'Connection error');
+            console.error('Peer error:', err);
+            this.updateConnectionStatus('disconnected', 'Error');
         });
-
         this.peer.on('disconnected', () => {
-            this.updateConnectionStatus('disconnected', 'Disconnected');
-            // Try to reconnect
+            this.updateConnectionStatus('disconnected', 'Offline');
             setTimeout(() => this.peer.reconnect(), 3000);
         });
     }
 
     handleIncomingConnection(conn) {
-        console.log('Incoming connection from:', conn.peer);
-
         conn.on('open', () => {
             this.connections.set(conn.peer, conn);
-
-            // Send current game state if host
             if (this.isHost && this.currentRoom) {
                 conn.send({
                     type: 'room_state',
                     room: this.currentRoom,
-                    players: Array.from(this.otherPlayers.entries()).map(([id, p]) => ({
-                        id, ...p
-                    })),
-                    host: this.player
+                    players: Array.from(this.otherPlayers.entries()),
+                    host: { id: this.peerId, ...this.getPlayerState() }
                 });
             }
         });
-
-        conn.on('data', (data) => {
-            this.handleMessage(conn.peer, data);
-        });
-
+        conn.on('data', (data) => this.handleMessage(conn.peer, data));
         conn.on('close', () => {
             this.connections.delete(conn.peer);
             this.removePlayer(conn.peer);
@@ -130,133 +183,120 @@ class FlyGame {
     }
 
     connectToPeer(peerId) {
-        if (this.connections.has(peerId)) return;
+        if (this.connections.has(peerId) || peerId === this.peerId) return;
 
-        const conn = this.peer.connect(peerId);
+        const conn = this.peer.connect(peerId, { reliable: true });
 
         conn.on('open', () => {
             this.connections.set(peerId, conn);
-            console.log('Connected to peer:', peerId);
         });
-
-        conn.on('data', (data) => {
-            this.handleMessage(peerId, data);
-        });
-
+        conn.on('data', (data) => this.handleMessage(peerId, data));
         conn.on('close', () => {
             this.connections.delete(peerId);
             this.removePlayer(peerId);
         });
-
-        conn.on('error', (err) => {
-            console.error('Connection error:', err);
-        });
     }
 
-    broadcast(data, excludePeer = null) {
-        this.connections.forEach((conn, peerId) => {
-            if (peerId !== excludePeer) {
-                try {
-                    conn.send(data);
-                } catch (e) {
-                    console.error('Failed to send to', peerId);
-                }
+    broadcast(data, exclude = null) {
+        this.connections.forEach((conn, id) => {
+            if (id !== exclude) {
+                try { conn.send(data); } catch (e) {}
             }
         });
     }
 
-    handleMessage(fromPeer, data) {
+    handleMessage(from, data) {
         switch (data.type) {
-            case 'room_list':
-                this.updateRoomList(data.rooms);
-                break;
-
             case 'room_info':
                 this.rooms.set(data.room.id, data.room);
                 this.renderRoomList();
                 break;
 
             case 'room_state':
-                // Received full room state
                 this.currentRoom = data.room;
-                data.players.forEach(p => {
-                    this.otherPlayers.set(p.id, p);
-                });
-                if (data.host) {
-                    this.otherPlayers.set(data.host.id, data.host);
-                }
+                if (data.host) this.otherPlayers.set(data.host.id, data.host);
+                data.players?.forEach(([id, p]) => this.otherPlayers.set(id, p));
                 break;
 
             case 'player_join':
                 this.addPlayer(data.player);
-                this.addChatMessage('System', `${data.player.name} joined the game`);
+                this.addChat('System', `${data.player.name} joined`, true);
                 break;
 
             case 'player_leave':
-                this.removePlayer(data.playerId);
+                const p = this.otherPlayers.get(data.id);
+                if (p) this.addChat('System', `${p.name} left`, true);
+                this.removePlayer(data.id);
                 break;
 
             case 'player_update':
-                this.updatePlayer(fromPeer, data.player);
+                this.updateOtherPlayer(from, data);
                 break;
 
-            case 'player_fire':
-                this.handlePlayerFire(fromPeer, data);
+            case 'fire':
+                this.createProjectile(data.position, data.direction, from, data.color);
+                this.playSound('fire');
                 break;
 
-            case 'player_hit':
-                this.handlePlayerHit(data);
+            case 'hit':
+                if (data.target === this.peerId) {
+                    this.player.health -= data.damage;
+                    this.playSound('hit');
+                    if (this.player.health <= 0) this.handleDeath(data.shooter);
+                }
                 break;
 
-            case 'player_death':
-                this.handlePlayerDeath(data);
+            case 'death':
+                this.addKillFeed(data.killerName, data.victimName);
+                if (data.killer === this.peerId) this.player.kills++;
                 break;
 
             case 'chat':
-                this.addChatMessage(data.name, data.message);
+                this.addChat(data.name, data.msg);
                 break;
 
-            case 'discover_rooms':
-                // Respond with our room if we're hosting
+            case 'discover':
                 if (this.isHost && this.currentRoom) {
-                    const conn = this.connections.get(fromPeer);
-                    if (conn) {
-                        conn.send({
-                            type: 'room_info',
-                            room: {
-                                ...this.currentRoom,
-                                playerCount: this.connections.size + 1
-                            }
-                        });
-                    }
+                    const conn = this.connections.get(from);
+                    if (conn) conn.send({
+                        type: 'room_info',
+                        room: { ...this.currentRoom, players: this.connections.size + 1 }
+                    });
                 }
                 break;
         }
     }
 
-    // ==================== Room Management ====================
-
-    discoverRooms() {
-        // In a real P2P network, we'd use a signaling server or DHT
-        // For now, we'll use a simple approach with known peer prefixes
-        this.rooms.clear();
-        this.renderRoomList();
-
-        // Broadcast room discovery to connected peers
-        this.broadcast({ type: 'discover_rooms' });
+    getPlayerState() {
+        return {
+            name: this.player.name,
+            aircraft: this.player.aircraft,
+            position: this.player.position.toArray(),
+            rotation: [this.player.rotation.x, this.player.rotation.y, this.player.rotation.z],
+            speed: this.player.speed,
+            health: this.player.health,
+            kills: this.player.kills,
+            deaths: this.player.deaths
+        };
     }
 
-    createRoom(name, maxPlayers, gameMode) {
+    // ==================== ROOMS ====================
+
+    discoverRooms() {
+        this.rooms.clear();
+        this.renderRoomList();
+        this.broadcast({ type: 'discover' });
+    }
+
+    createRoom(name, maxPlayers, mode) {
         this.currentRoom = {
             id: this.peerId,
             name: name || `${this.player.name}'s Room`,
             host: this.peerId,
-            maxPlayers: maxPlayers,
-            gameMode: gameMode,
-            playerCount: 1,
-            createdAt: Date.now()
+            maxPlayers,
+            mode,
+            players: 1
         };
-
         this.isHost = true;
         this.startGame();
     }
@@ -264,332 +304,347 @@ class FlyGame {
     joinRoom(roomId) {
         this.connectToPeer(roomId);
         this.isHost = false;
-
-        // Wait for connection and room state
         setTimeout(() => {
             const conn = this.connections.get(roomId);
             if (conn) {
-                conn.send({
-                    type: 'player_join',
-                    player: {
-                        id: this.peerId,
-                        name: this.player.name,
-                        aircraft: this.player.aircraft
-                    }
-                });
+                conn.send({ type: 'player_join', player: { id: this.peerId, ...this.getPlayerState() } });
                 this.startGame();
             }
-        }, 1000);
+        }, 500);
     }
 
     quickPlay() {
-        // Find a room with available space or create one
-        let foundRoom = null;
+        if (!this.player.name.trim()) {
+            this.player.name = 'Pilot_' + Math.random().toString(36).substr(2, 4);
+            document.getElementById('player-name').value = this.player.name;
+        }
 
+        let found = null;
         for (const [id, room] of this.rooms) {
-            if (room.playerCount < room.maxPlayers) {
-                foundRoom = room;
-                break;
-            }
+            if (room.players < room.maxPlayers) { found = room; break; }
         }
-
-        if (foundRoom) {
-            this.joinRoom(foundRoom.id);
-        } else {
-            this.createRoom('Quick Play', 8, 'ffa');
-        }
-    }
-
-    updateRoomList(rooms) {
-        rooms.forEach(room => {
-            this.rooms.set(room.id, room);
-        });
-        this.renderRoomList();
+        found ? this.joinRoom(found.id) : this.createRoom('Quick Play', 8, 'ffa');
     }
 
     renderRoomList() {
-        const roomList = document.getElementById('room-list');
+        const list = document.getElementById('room-list');
 
         if (this.rooms.size === 0) {
-            roomList.innerHTML = `
+            list.innerHTML = `
                 <div class="no-rooms">
-                    <p>No rooms available</p>
-                    <p>Create a new room or use Quick Play!</p>
-                </div>
-            `;
+                    <div class="no-rooms-icon">📡</div>
+                    <p>No active rooms found</p>
+                    <p style="font-size: 0.9em; margin-top: 10px;">Create a room or Quick Play!</p>
+                </div>`;
             return;
         }
 
-        roomList.innerHTML = '';
-
+        list.innerHTML = '';
         this.rooms.forEach((room, id) => {
-            const roomEl = document.createElement('div');
-            roomEl.className = 'room-item';
-            roomEl.innerHTML = `
+            const el = document.createElement('div');
+            el.className = 'room-item';
+            el.innerHTML = `
                 <div class="room-info">
                     <h3>${this.escapeHtml(room.name)}</h3>
-                    <p>${room.gameMode.toUpperCase()} | Host: ${room.host.substring(0, 8)}...</p>
+                    <div class="room-meta">
+                        <span>🎮 ${room.mode?.toUpperCase() || 'FFA'}</span>
+                        <span>👤 Host: ${room.host.substr(4, 6)}</span>
+                    </div>
                 </div>
-                <div class="room-players">
-                    <span class="player-count">${room.playerCount}/${room.maxPlayers}</span>
-                    <button class="btn" data-room-id="${id}">Join</button>
-                </div>
-            `;
-
-            roomEl.querySelector('button').addEventListener('click', () => {
-                this.joinRoom(id);
-            });
-
-            roomList.appendChild(roomEl);
+                <div class="player-count">${room.players || 1}/${room.maxPlayers}</div>`;
+            el.addEventListener('click', () => this.joinRoom(id));
+            list.appendChild(el);
         });
     }
 
-    // ==================== Game Engine ====================
+    // ==================== GAME ENGINE ====================
 
     initGame() {
         const canvas = document.getElementById('game-canvas');
 
         // Scene
         this.scene = new THREE.Scene();
-        this.scene.background = new THREE.Color(0x87ceeb);
-        this.scene.fog = new THREE.Fog(0x87ceeb, 500, 10000);
+        this.scene.background = new THREE.Color(0x87CEEB);
+        this.scene.fog = new THREE.FogExp2(0xCCE0FF, 0.00015);
 
         // Camera
-        this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 20000);
-        this.camera.position.set(0, 150, -200);
+        this.camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 1, 50000);
 
         // Renderer
-        this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+        this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         this.renderer.shadowMap.enabled = true;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
         // Lighting
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-        this.scene.add(ambientLight);
+        const ambient = new THREE.AmbientLight(0xffffff, 0.5);
+        this.scene.add(ambient);
 
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-        directionalLight.position.set(100, 200, 100);
-        directionalLight.castShadow = true;
-        this.scene.add(directionalLight);
+        const sun = new THREE.DirectionalLight(0xffffff, 1);
+        sun.position.set(500, 1000, 500);
+        sun.castShadow = true;
+        sun.shadow.mapSize.width = 2048;
+        sun.shadow.mapSize.height = 2048;
+        sun.shadow.camera.near = 100;
+        sun.shadow.camera.far = 5000;
+        sun.shadow.camera.left = -2000;
+        sun.shadow.camera.right = 2000;
+        sun.shadow.camera.top = 2000;
+        sun.shadow.camera.bottom = -2000;
+        this.scene.add(sun);
 
-        // Create world
+        const hemi = new THREE.HemisphereLight(0x87CEEB, 0x3d9140, 0.4);
+        this.scene.add(hemi);
+
         this.createWorld();
-
-        // Create player aircraft
         this.createPlayerAircraft();
-
-        // Handle resize
-        window.addEventListener('resize', () => this.onWindowResize());
-
-        // Setup minimap
         this.setupMinimap();
+
+        window.addEventListener('resize', () => this.onResize());
     }
 
     createWorld() {
-        // Ground
-        const groundGeometry = new THREE.PlaneGeometry(20000, 20000);
-        const groundMaterial = new THREE.MeshLambertMaterial({ color: 0x3d9140 });
-        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-        ground.rotation.x = -Math.PI / 2;
-        ground.receiveShadow = true;
-        this.scene.add(ground);
+        // Water
+        const waterGeo = new THREE.PlaneGeometry(100000, 100000);
+        const waterMat = new THREE.MeshLambertMaterial({
+            color: 0x1e90ff,
+            transparent: true,
+            opacity: 0.9
+        });
+        const water = new THREE.Mesh(waterGeo, waterMat);
+        water.rotation.x = -Math.PI / 2;
+        water.position.y = -5;
+        this.scene.add(water);
 
-        // Ocean (far away)
-        const oceanGeometry = new THREE.PlaneGeometry(50000, 50000);
-        const oceanMaterial = new THREE.MeshLambertMaterial({ color: 0x1e90ff });
-        const ocean = new THREE.Mesh(oceanGeometry, oceanMaterial);
-        ocean.rotation.x = -Math.PI / 2;
-        ocean.position.y = -5;
-        ocean.position.z = 15000;
-        this.scene.add(ocean);
+        // Main Island
+        const islandGeo = new THREE.CylinderGeometry(3000, 3500, 50, 32);
+        const islandMat = new THREE.MeshLambertMaterial({ color: 0x3d9140 });
+        const island = new THREE.Mesh(islandGeo, islandMat);
+        island.position.y = -25;
+        island.receiveShadow = true;
+        this.scene.add(island);
+
+        // Beach ring
+        const beachGeo = new THREE.RingGeometry(2800, 3200, 32);
+        const beachMat = new THREE.MeshLambertMaterial({ color: 0xF4D03F, side: THREE.DoubleSide });
+        const beach = new THREE.Mesh(beachGeo, beachMat);
+        beach.rotation.x = -Math.PI / 2;
+        beach.position.y = 1;
+        this.scene.add(beach);
 
         // Runway
-        const runwayGeometry = new THREE.BoxGeometry(50, 1, 1000);
-        const runwayMaterial = new THREE.MeshLambertMaterial({ color: 0x333333 });
-        const runway = new THREE.Mesh(runwayGeometry, runwayMaterial);
-        runway.position.y = 0.5;
+        const runwayGeo = new THREE.BoxGeometry(60, 2, 1500);
+        const runwayMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
+        const runway = new THREE.Mesh(runwayGeo, runwayMat);
+        runway.position.y = 1;
         runway.receiveShadow = true;
         this.scene.add(runway);
 
         // Runway markings
-        for (let i = -400; i < 400; i += 50) {
-            const markingGeometry = new THREE.BoxGeometry(2, 0.1, 20);
-            const markingMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
-            const marking = new THREE.Mesh(markingGeometry, markingMaterial);
-            marking.position.set(0, 1, i);
-            this.scene.add(marking);
+        for (let z = -700; z <= 700; z += 100) {
+            const markGeo = new THREE.BoxGeometry(3, 0.5, 30);
+            const markMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+            const mark = new THREE.Mesh(markGeo, markMat);
+            mark.position.set(0, 2, z);
+            this.scene.add(mark);
         }
 
-        // Buildings
-        for (let i = 0; i < 20; i++) {
-            const width = 20 + Math.random() * 30;
-            const height = 30 + Math.random() * 100;
-            const depth = 20 + Math.random() * 30;
+        // Threshold markings
+        for (let x = -25; x <= 25; x += 5) {
+            const tGeo = new THREE.BoxGeometry(2, 0.5, 50);
+            const tMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+            const t = new THREE.Mesh(tGeo, tMat);
+            t.position.set(x, 2, -700);
+            this.scene.add(t);
+        }
 
-            const buildingGeometry = new THREE.BoxGeometry(width, height, depth);
-            const buildingMaterial = new THREE.MeshLambertMaterial({
-                color: new THREE.Color().setHSL(0, 0, 0.3 + Math.random() * 0.4)
+        // Control Tower
+        const towerGeo = new THREE.CylinderGeometry(8, 10, 100, 8);
+        const towerMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
+        const tower = new THREE.Mesh(towerGeo, towerMat);
+        tower.position.set(150, 50, 200);
+        tower.castShadow = true;
+        this.scene.add(tower);
+
+        const cabinGeo = new THREE.CylinderGeometry(15, 12, 20, 8);
+        const cabinMat = new THREE.MeshLambertMaterial({ color: 0x4a90d9, transparent: true, opacity: 0.8 });
+        const cabin = new THREE.Mesh(cabinGeo, cabinMat);
+        cabin.position.set(150, 110, 200);
+        this.scene.add(cabin);
+
+        // Hangars
+        for (let i = 0; i < 3; i++) {
+            const hangarGeo = new THREE.BoxGeometry(80, 40, 100);
+            const hangarMat = new THREE.MeshLambertMaterial({ color: 0x666666 });
+            const hangar = new THREE.Mesh(hangarGeo, hangarMat);
+            hangar.position.set(-200, 20, -400 + i * 200);
+            hangar.castShadow = true;
+            hangar.receiveShadow = true;
+            this.scene.add(hangar);
+        }
+
+        // City buildings
+        for (let i = 0; i < 30; i++) {
+            const w = 30 + Math.random() * 50;
+            const h = 50 + Math.random() * 150;
+            const d = 30 + Math.random() * 50;
+            const buildGeo = new THREE.BoxGeometry(w, h, d);
+            const buildMat = new THREE.MeshLambertMaterial({
+                color: new THREE.Color().setHSL(0.6, 0.1, 0.3 + Math.random() * 0.3)
             });
-            const building = new THREE.Mesh(buildingGeometry, buildingMaterial);
+            const building = new THREE.Mesh(buildGeo, buildMat);
 
-            const angle = Math.random() * Math.PI * 2;
-            const distance = 500 + Math.random() * 2000;
-            building.position.set(
-                Math.cos(angle) * distance,
-                height / 2,
-                Math.sin(angle) * distance
-            );
+            const angle = (i / 30) * Math.PI * 2;
+            const dist = 800 + Math.random() * 1500;
+            building.position.set(Math.cos(angle) * dist, h / 2, Math.sin(angle) * dist);
             building.castShadow = true;
             building.receiveShadow = true;
             this.scene.add(building);
         }
 
-        // Control Tower
-        const towerGeometry = new THREE.CylinderGeometry(5, 8, 80, 8);
-        const towerMaterial = new THREE.MeshLambertMaterial({ color: 0x888888 });
-        const tower = new THREE.Mesh(towerGeometry, towerMaterial);
-        tower.position.set(100, 40, 0);
-        tower.castShadow = true;
-        this.scene.add(tower);
+        // Mountains
+        for (let i = 0; i < 8; i++) {
+            const mGeo = new THREE.ConeGeometry(400 + Math.random() * 400, 600 + Math.random() * 500, 6);
+            const mMat = new THREE.MeshLambertMaterial({ color: 0x4a6741 });
+            const mountain = new THREE.Mesh(mGeo, mMat);
 
-        // Tower cabin
-        const cabinGeometry = new THREE.CylinderGeometry(12, 10, 15, 8);
-        const cabinMaterial = new THREE.MeshLambertMaterial({ color: 0x87ceeb });
-        const cabin = new THREE.Mesh(cabinGeometry, cabinMaterial);
-        cabin.position.set(100, 85, 0);
-        this.scene.add(cabin);
-
-        // Mountains in distance
-        for (let i = 0; i < 10; i++) {
-            const mountainGeometry = new THREE.ConeGeometry(500 + Math.random() * 500, 800 + Math.random() * 600, 4);
-            const mountainMaterial = new THREE.MeshLambertMaterial({ color: 0x6b8e23 });
-            const mountain = new THREE.Mesh(mountainGeometry, mountainMaterial);
-
-            const angle = (i / 10) * Math.PI * 2;
-            mountain.position.set(
-                Math.cos(angle) * 8000,
-                0,
-                Math.sin(angle) * 8000
-            );
-            mountain.rotation.y = Math.random() * Math.PI;
+            const angle = (i / 8) * Math.PI * 2;
+            mountain.position.set(Math.cos(angle) * 6000, 0, Math.sin(angle) * 6000);
+            mountain.castShadow = true;
             this.scene.add(mountain);
+
+            // Snow cap
+            const snowGeo = new THREE.ConeGeometry(100 + Math.random() * 100, 150, 6);
+            const snowMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+            const snow = new THREE.Mesh(snowGeo, snowMat);
+            snow.position.copy(mountain.position);
+            snow.position.y = mountain.geometry.parameters.height - 100;
+            this.scene.add(snow);
         }
 
         // Clouds
-        for (let i = 0; i < 50; i++) {
+        for (let i = 0; i < 40; i++) {
             const cloudGroup = new THREE.Group();
 
-            for (let j = 0; j < 5; j++) {
-                const cloudGeometry = new THREE.SphereGeometry(30 + Math.random() * 50, 8, 8);
-                const cloudMaterial = new THREE.MeshLambertMaterial({
-                    color: 0xffffff,
-                    transparent: true,
-                    opacity: 0.8
-                });
-                const cloudPart = new THREE.Mesh(cloudGeometry, cloudMaterial);
-                cloudPart.position.set(
-                    Math.random() * 80 - 40,
-                    Math.random() * 20 - 10,
-                    Math.random() * 80 - 40
-                );
-                cloudGroup.add(cloudPart);
+            for (let j = 0; j < 6; j++) {
+                const cGeo = new THREE.SphereGeometry(40 + Math.random() * 60, 8, 6);
+                const cMat = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
+                const part = new THREE.Mesh(cGeo, cMat);
+                part.position.set(Math.random() * 100 - 50, Math.random() * 30 - 15, Math.random() * 100 - 50);
+                part.scale.y = 0.6;
+                cloudGroup.add(part);
             }
 
             cloudGroup.position.set(
-                Math.random() * 10000 - 5000,
-                500 + Math.random() * 1000,
-                Math.random() * 10000 - 5000
+                Math.random() * 15000 - 7500,
+                400 + Math.random() * 800,
+                Math.random() * 15000 - 7500
             );
             this.scene.add(cloudGroup);
         }
+
+        // Aircraft Carrier
+        const carrierGroup = new THREE.Group();
+
+        const hullGeo = new THREE.BoxGeometry(60, 20, 300);
+        const hullMat = new THREE.MeshLambertMaterial({ color: 0x444444 });
+        const hull = new THREE.Mesh(hullGeo, hullMat);
+        hull.position.y = 5;
+        carrierGroup.add(hull);
+
+        const deckGeo = new THREE.BoxGeometry(50, 3, 280);
+        const deckMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
+        const deck = new THREE.Mesh(deckGeo, deckMat);
+        deck.position.y = 16;
+        carrierGroup.add(deck);
+
+        const towerGeo2 = new THREE.BoxGeometry(15, 30, 30);
+        const tower2 = new THREE.Mesh(towerGeo2, new THREE.MeshLambertMaterial({ color: 0x555555 }));
+        tower2.position.set(20, 30, 50);
+        carrierGroup.add(tower2);
+
+        carrierGroup.position.set(2000, 0, 2000);
+        carrierGroup.castShadow = true;
+        this.scene.add(carrierGroup);
     }
 
     createPlayerAircraft() {
         const stats = this.aircraftStats[this.player.aircraft];
-
-        // Simple aircraft geometry
-        const group = new THREE.Group();
-
-        // Fuselage
-        const fuselageGeometry = new THREE.CylinderGeometry(2, 3, 20, 8);
-        fuselageGeometry.rotateX(Math.PI / 2);
-        const fuselageMaterial = new THREE.MeshLambertMaterial({ color: stats.color });
-        const fuselage = new THREE.Mesh(fuselageGeometry, fuselageMaterial);
-        group.add(fuselage);
-
-        // Wings
-        const wingGeometry = new THREE.BoxGeometry(30, 0.5, 5);
-        const wingMaterial = new THREE.MeshLambertMaterial({ color: stats.color });
-        const wings = new THREE.Mesh(wingGeometry, wingMaterial);
-        wings.position.z = -2;
-        group.add(wings);
-
-        // Tail
-        const tailGeometry = new THREE.BoxGeometry(10, 0.5, 3);
-        const tail = new THREE.Mesh(tailGeometry, new THREE.MeshLambertMaterial({ color: stats.color }));
-        tail.position.z = -10;
-        group.add(tail);
-
-        // Vertical stabilizer
-        const stabGeometry = new THREE.BoxGeometry(0.5, 5, 3);
-        const stab = new THREE.Mesh(stabGeometry, new THREE.MeshLambertMaterial({ color: stats.color }));
-        stab.position.set(0, 2.5, -10);
-        group.add(stab);
-
-        // Cockpit
-        const cockpitGeometry = new THREE.SphereGeometry(2, 8, 8, 0, Math.PI * 2, 0, Math.PI / 2);
-        const cockpitMaterial = new THREE.MeshLambertMaterial({ color: 0x87ceeb, transparent: true, opacity: 0.7 });
-        const cockpit = new THREE.Mesh(cockpitGeometry, cockpitMaterial);
-        cockpit.position.set(0, 1.5, 5);
-        group.add(cockpit);
-
-        group.castShadow = true;
-        group.position.set(this.player.position.x, this.player.position.y, this.player.position.z);
-
-        this.playerMesh = group;
-        this.scene.add(group);
+        this.playerMesh = this.createAircraftMesh(stats.color, stats.accentColor);
+        this.playerMesh.position.copy(this.player.position);
+        this.scene.add(this.playerMesh);
     }
 
-    createOtherPlayerMesh(playerData) {
-        const stats = this.aircraftStats[playerData.aircraft] || this.aircraftStats.cessna;
-
+    createAircraftMesh(mainColor, accentColor) {
         const group = new THREE.Group();
 
         // Fuselage
-        const fuselageGeometry = new THREE.CylinderGeometry(2, 3, 20, 8);
-        fuselageGeometry.rotateX(Math.PI / 2);
-        const fuselageMaterial = new THREE.MeshLambertMaterial({ color: stats.color });
-        const fuselage = new THREE.Mesh(fuselageGeometry, fuselageMaterial);
+        const fuseGeo = new THREE.CylinderGeometry(2, 4, 25, 8);
+        fuseGeo.rotateX(Math.PI / 2);
+        const fuseMat = new THREE.MeshLambertMaterial({ color: mainColor });
+        const fuselage = new THREE.Mesh(fuseGeo, fuseMat);
+        fuselage.castShadow = true;
         group.add(fuselage);
 
+        // Nose
+        const noseGeo = new THREE.ConeGeometry(2, 8, 8);
+        noseGeo.rotateX(-Math.PI / 2);
+        const nose = new THREE.Mesh(noseGeo, fuseMat);
+        nose.position.z = 16;
+        group.add(nose);
+
+        // Cockpit
+        const cockpitGeo = new THREE.SphereGeometry(2.5, 8, 6, 0, Math.PI * 2, 0, Math.PI / 2);
+        const cockpitMat = new THREE.MeshLambertMaterial({ color: 0x4a90d9, transparent: true, opacity: 0.7 });
+        const cockpit = new THREE.Mesh(cockpitGeo, cockpitMat);
+        cockpit.position.set(0, 2, 5);
+        group.add(cockpit);
+
         // Wings
-        const wingGeometry = new THREE.BoxGeometry(30, 0.5, 5);
-        const wings = new THREE.Mesh(wingGeometry, new THREE.MeshLambertMaterial({ color: stats.color }));
+        const wingGeo = new THREE.BoxGeometry(40, 1, 8);
+        const wingMat = new THREE.MeshLambertMaterial({ color: mainColor });
+        const wings = new THREE.Mesh(wingGeo, wingMat);
         wings.position.z = -2;
+        wings.castShadow = true;
         group.add(wings);
 
+        // Wing tips
+        const tipGeo = new THREE.BoxGeometry(2, 0.5, 3);
+        const tipMat = new THREE.MeshLambertMaterial({ color: accentColor });
+        const tipL = new THREE.Mesh(tipGeo, tipMat);
+        tipL.position.set(-20, 0, -2);
+        group.add(tipL);
+        const tipR = tipL.clone();
+        tipR.position.x = 20;
+        group.add(tipR);
+
         // Tail
-        const tailGeometry = new THREE.BoxGeometry(10, 0.5, 3);
-        const tail = new THREE.Mesh(tailGeometry, new THREE.MeshLambertMaterial({ color: stats.color }));
-        tail.position.z = -10;
+        const tailGeo = new THREE.BoxGeometry(15, 1, 5);
+        const tail = new THREE.Mesh(tailGeo, wingMat);
+        tail.position.z = -12;
         group.add(tail);
 
         // Vertical stabilizer
-        const stabGeometry = new THREE.BoxGeometry(0.5, 5, 3);
-        const stab = new THREE.Mesh(stabGeometry, new THREE.MeshLambertMaterial({ color: stats.color }));
-        stab.position.set(0, 2.5, -10);
-        group.add(stab);
+        const vStabGeo = new THREE.BoxGeometry(1, 8, 6);
+        const vStab = new THREE.Mesh(vStabGeo, wingMat);
+        vStab.position.set(0, 4, -12);
+        group.add(vStab);
 
-        // Name tag
-        // (Would use CSS2DRenderer in production)
-
-        group.castShadow = true;
-        this.scene.add(group);
+        // Engine glow (for jets)
+        if (mainColor !== 0xffffff) {
+            const glowGeo = new THREE.CylinderGeometry(1.5, 2, 3, 8);
+            glowGeo.rotateX(Math.PI / 2);
+            const glowMat = new THREE.MeshBasicMaterial({ color: 0xff6600, transparent: true, opacity: 0.8 });
+            const glow = new THREE.Mesh(glowGeo, glowMat);
+            glow.position.z = -14;
+            group.add(glow);
+        }
 
         return group;
     }
 
-    // ==================== Game Loop ====================
+    // ==================== GAME LOOP ====================
 
     startGame() {
         document.getElementById('lobby').classList.add('hidden');
@@ -598,23 +653,15 @@ class FlyGame {
         this.state = 'playing';
         this.initGame();
 
-        // Start position
-        this.player.position = { x: 0, y: 100, z: -300 };
-        this.player.rotation = { x: 0, y: 0, z: 0 };
+        this.player.position.set(0, 150, -500);
+        this.player.rotation.set(0, 0, 0);
+        this.player.health = 100;
 
-        // Notify others
         this.broadcast({
             type: 'player_join',
-            player: {
-                id: this.peerId,
-                name: this.player.name,
-                aircraft: this.player.aircraft,
-                position: this.player.position,
-                rotation: this.player.rotation
-            }
+            player: { id: this.peerId, ...this.getPlayerState() }
         });
 
-        // Start game loop
         this.lastUpdate = performance.now();
         this.gameLoop();
     }
@@ -623,383 +670,407 @@ class FlyGame {
         if (this.state !== 'playing') return;
 
         const now = performance.now();
-        const delta = (now - this.lastUpdate) / 1000;
+        const delta = Math.min((now - this.lastUpdate) / 1000, 0.1);
         this.lastUpdate = now;
 
-        this.updatePlayer(delta);
-        this.updateOtherPlayers();
-        this.updateCamera();
+        this.updateFlight(delta);
+        this.updateProjectiles(delta);
+        this.updateExplosions(delta);
+        this.syncOtherPlayers();
+        this.updateCamera(delta);
         this.updateHUD();
         this.updateMinimap();
-        this.updateGameTimer(delta);
+        this.updateTimer(delta);
 
-        // Broadcast position at 20Hz
-        if (now % 50 < delta * 1000) {
-            this.broadcastPosition();
+        // Broadcast at ~20Hz
+        if (now - this.lastBroadcast > 50) {
+            this.broadcastState();
+            this.lastBroadcast = now;
         }
 
-        this.renderer.render(this.scene, this.camera);
+        // Speed lines effect
+        const speedLines = document.getElementById('speed-lines');
+        speedLines.classList.toggle('active', this.player.speed > 100);
 
+        this.renderer.render(this.scene, this.camera);
         requestAnimationFrame(() => this.gameLoop());
     }
 
-    updatePlayer(delta) {
+    updateFlight(delta) {
         const stats = this.aircraftStats[this.player.aircraft];
-        const maxSpeed = stats.maxSpeed / 10; // Scale for game units
+        const maxSpeed = stats.maxSpeed / 10;
 
-        // Input handling
-        if (this.keys['KeyW'] || this.keys['ArrowUp']) {
-            this.player.throttle = Math.min(1, this.player.throttle + delta);
-        }
-        if (this.keys['KeyS'] || this.keys['ArrowDown']) {
-            this.player.throttle = Math.max(0, this.player.throttle - delta);
-        }
+        // Throttle
+        if (this.keys['KeyW']) this.player.throttle = Math.min(1, this.player.throttle + delta * 0.5);
+        if (this.keys['KeyS']) this.player.throttle = Math.max(0, this.player.throttle - delta * 0.5);
 
-        // Speed based on throttle
+        // Speed
         const targetSpeed = this.player.throttle * maxSpeed;
         this.player.speed += (targetSpeed - this.player.speed) * delta * 2;
 
         // Rotation
-        const rotSpeed = 2;
+        const rotSpeed = stats.agility / 50;
+        const rot = this.player.rotation;
+
         if (this.keys['ArrowLeft']) {
-            this.player.rotation.z += rotSpeed * delta;
-            this.player.rotation.y += rotSpeed * 0.5 * delta;
+            rot.z += rotSpeed * delta;
+            rot.y += rotSpeed * 0.3 * delta;
         }
         if (this.keys['ArrowRight']) {
-            this.player.rotation.z -= rotSpeed * delta;
-            this.player.rotation.y -= rotSpeed * 0.5 * delta;
+            rot.z -= rotSpeed * delta;
+            rot.y -= rotSpeed * 0.3 * delta;
         }
+        if (this.keys['ArrowUp']) rot.x -= rotSpeed * delta;
+        if (this.keys['ArrowDown']) rot.x += rotSpeed * delta;
 
-        // Pitch
-        if (this.keys['KeyQ']) {
-            this.player.rotation.x -= rotSpeed * delta;
-        }
-        if (this.keys['KeyE']) {
-            this.player.rotation.x += rotSpeed * delta;
-        }
+        // Banking effect
+        rot.x -= rot.z * delta * 0.3;
 
-        // Bank to pitch (realistic banking)
-        this.player.rotation.x -= this.player.rotation.z * delta * 0.5;
+        // Limits and damping
+        rot.z = THREE.MathUtils.clamp(rot.z, -Math.PI / 2.5, Math.PI / 2.5);
+        rot.x = THREE.MathUtils.clamp(rot.x, -Math.PI / 3, Math.PI / 3);
+        rot.z *= 0.97;
+        rot.x *= 0.98;
 
-        // Limit bank
-        this.player.rotation.z = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, this.player.rotation.z));
+        // Direction
+        const dir = new THREE.Vector3(0, 0, 1);
+        const quat = new THREE.Quaternion().setFromEuler(rot);
+        dir.applyQuaternion(quat);
 
-        // Return to level gradually
-        this.player.rotation.z *= 0.98;
-        this.player.rotation.x *= 0.99;
+        // Position
+        const speed = this.player.speed * delta * 15;
+        this.player.position.add(dir.multiplyScalar(speed));
 
-        // Calculate velocity based on rotation
-        const direction = new THREE.Vector3(0, 0, 1);
-        const quaternion = new THREE.Quaternion();
-        quaternion.setFromEuler(new THREE.Euler(
-            this.player.rotation.x,
-            this.player.rotation.y,
-            this.player.rotation.z,
-            'YXZ'
-        ));
-        direction.applyQuaternion(quaternion);
-
-        // Update position
-        this.player.position.x += direction.x * this.player.speed * delta * 10;
-        this.player.position.y += direction.y * this.player.speed * delta * 10;
-        this.player.position.z += direction.z * this.player.speed * delta * 10;
-
-        // Gravity effect when slow
+        // Gravity when slow
         if (this.player.speed < 5) {
-            this.player.position.y -= (5 - this.player.speed) * delta * 5;
+            this.player.position.y -= (5 - this.player.speed) * delta * 3;
         }
 
         // Ground collision
-        if (this.player.position.y < 10) {
-            if (this.player.speed > 20 || Math.abs(this.player.rotation.z) > 0.3) {
-                // Crash!
+        if (this.player.position.y < 15) {
+            if (this.player.speed > 15 || Math.abs(rot.z) > 0.4) {
                 this.handleCrash();
             }
-            this.player.position.y = 10;
+            this.player.position.y = 15;
         }
 
         // Altitude limit
         const maxAlt = stats.maxAlt / 10;
-        if (this.player.position.y > maxAlt) {
-            this.player.position.y = maxAlt;
-        }
+        if (this.player.position.y > maxAlt) this.player.position.y = maxAlt;
 
         // Update mesh
         if (this.playerMesh) {
-            this.playerMesh.position.set(
-                this.player.position.x,
-                this.player.position.y,
-                this.player.position.z
-            );
-            this.playerMesh.rotation.set(
-                this.player.rotation.x,
-                this.player.rotation.y,
-                this.player.rotation.z,
-                'YXZ'
-            );
+            this.playerMesh.position.copy(this.player.position);
+            this.playerMesh.quaternion.copy(quat);
         }
     }
 
-    updateOtherPlayers() {
-        this.otherPlayers.forEach((playerData, id) => {
-            let mesh = this.otherPlayerMeshes.get(id);
-
-            if (!mesh) {
-                mesh = this.createOtherPlayerMesh(playerData);
-                this.otherPlayerMeshes.set(id, mesh);
-            }
-
-            // Smooth interpolation
-            if (playerData.position) {
-                mesh.position.lerp(
-                    new THREE.Vector3(playerData.position.x, playerData.position.y, playerData.position.z),
-                    0.2
-                );
-            }
-
-            if (playerData.rotation) {
-                mesh.rotation.set(
-                    playerData.rotation.x,
-                    playerData.rotation.y,
-                    playerData.rotation.z,
-                    'YXZ'
-                );
-            }
-        });
-    }
-
-    updateCamera() {
+    updateCamera(delta) {
         if (!this.playerMesh) return;
 
-        const offset = new THREE.Vector3();
-
+        let offset;
         if (this.cameraMode === 'third') {
-            offset.set(0, 30, -80);
+            offset = new THREE.Vector3(0, 20, -60);
         } else if (this.cameraMode === 'cockpit') {
-            offset.set(0, 3, 8);
-        } else if (this.cameraMode === 'chase') {
-            offset.set(0, 50, -150);
+            offset = new THREE.Vector3(0, 3, 10);
+        } else {
+            offset = new THREE.Vector3(0, 40, -100);
         }
 
         offset.applyQuaternion(this.playerMesh.quaternion);
-        const targetPos = this.playerMesh.position.clone().add(offset);
+        const target = this.playerMesh.position.clone().add(offset);
 
-        this.camera.position.lerp(targetPos, 0.1);
+        this.camera.position.lerp(target, delta * 5);
         this.camera.lookAt(this.playerMesh.position);
     }
 
     updateHUD() {
-        const stats = this.aircraftStats[this.player.aircraft];
-
-        // Health
         document.getElementById('health-fill').style.width = `${this.player.health}%`;
+        document.getElementById('health-text').textContent = `${Math.round(this.player.health)}%`;
+        document.getElementById('speed-value').textContent = Math.round(this.player.speed * 10);
+        document.getElementById('altitude-value').textContent = Math.round(this.player.position.y * 10);
+        document.getElementById('kills-value').textContent = this.player.kills;
+        document.getElementById('deaths-value').textContent = this.player.deaths;
 
-        // Speed (convert to knots-like display)
-        const displaySpeed = Math.round(this.player.speed * 10);
-        document.getElementById('speed-value').textContent = `${displaySpeed} kts`;
-
-        // Altitude
-        const displayAlt = Math.round(this.player.position.y * 10);
-        document.getElementById('altitude-value').textContent = `${displayAlt} ft`;
-
-        // K/D
-        document.getElementById('kd-value').textContent = `${this.player.kills} / ${this.player.deaths}`;
-
-        // Update leaderboard
         this.updateLeaderboard();
     }
 
     updateLeaderboard() {
-        const leaderboardList = document.getElementById('leaderboard-list');
-        const players = [
-            { id: this.peerId, name: this.player.name, kills: this.player.kills, deaths: this.player.deaths }
-        ];
-
+        const players = [{ id: this.peerId, name: this.player.name, kills: this.player.kills, deaths: this.player.deaths }];
         this.otherPlayers.forEach((p, id) => {
-            players.push({ id, name: p.name || 'Unknown', kills: p.kills || 0, deaths: p.deaths || 0 });
+            players.push({ id, name: p.name || '???', kills: p.kills || 0, deaths: p.deaths || 0 });
         });
-
-        // Sort by kills
         players.sort((a, b) => b.kills - a.kills);
 
-        leaderboardList.innerHTML = players.slice(0, 5).map((p, i) => `
+        document.getElementById('leaderboard-list').innerHTML = players.slice(0, 5).map((p, i) => `
             <div class="leaderboard-item ${p.id === this.peerId ? 'self' : ''}">
-                <span>${i + 1}. ${this.escapeHtml(p.name)}</span>
+                <span><span class="leaderboard-rank">#${i + 1}</span> ${this.escapeHtml(p.name)}</span>
                 <span>${p.kills}/${p.deaths}</span>
             </div>
         `).join('');
     }
 
-    updateGameTimer(delta) {
+    updateTimer(delta) {
         this.gameTime -= delta;
-        if (this.gameTime <= 0) {
-            this.endGame();
-            return;
-        }
+        if (this.gameTime <= 0) return this.endGame();
 
-        const minutes = Math.floor(this.gameTime / 60);
-        const seconds = Math.floor(this.gameTime % 60);
+        const m = Math.floor(this.gameTime / 60);
+        const s = Math.floor(this.gameTime % 60);
         document.getElementById('game-timer').textContent =
-            `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
     }
 
     setupMinimap() {
         this.minimapCanvas = document.getElementById('minimap-canvas');
         this.minimapCtx = this.minimapCanvas.getContext('2d');
-        this.minimapCanvas.width = 180;
-        this.minimapCanvas.height = 180;
+        this.minimapCanvas.width = 150;
+        this.minimapCanvas.height = 150;
     }
 
     updateMinimap() {
-        if (!this.minimapCtx) return;
-
         const ctx = this.minimapCtx;
-        const size = 180;
-        const scale = 0.02;
+        const size = 150;
+        const scale = 0.015;
 
-        // Clear
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+        ctx.fillStyle = 'rgba(0, 20, 40, 0.9)';
         ctx.beginPath();
         ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
         ctx.fill();
 
-        // Draw runway
-        ctx.strokeStyle = '#444';
-        ctx.lineWidth = 3;
+        // Island
+        ctx.fillStyle = 'rgba(61, 145, 64, 0.5)';
         ctx.beginPath();
-        const rx = size / 2 + (0 - this.player.position.x) * scale;
-        const rz = size / 2 + (0 - this.player.position.z) * scale;
-        ctx.moveTo(rx, rz - 10);
-        ctx.lineTo(rx, rz + 10);
-        ctx.stroke();
+        ctx.arc(size / 2 - this.player.position.x * scale, size / 2 - this.player.position.z * scale, 45, 0, Math.PI * 2);
+        ctx.fill();
 
-        // Draw other players
-        ctx.fillStyle = '#ff4444';
-        this.otherPlayers.forEach((p) => {
-            if (p.position) {
-                const px = size / 2 + (p.position.x - this.player.position.x) * scale;
-                const pz = size / 2 + (p.position.z - this.player.position.z) * scale;
-                const dist = Math.sqrt(Math.pow(px - size / 2, 2) + Math.pow(pz - size / 2, 2));
+        // Runway
+        ctx.fillStyle = '#444';
+        const rx = size / 2 - this.player.position.x * scale;
+        const rz = size / 2 - this.player.position.z * scale;
+        ctx.fillRect(rx - 1, rz - 20, 2, 40);
 
-                if (dist < size / 2 - 5) {
-                    ctx.beginPath();
-                    ctx.arc(px, pz, 4, 0, Math.PI * 2);
-                    ctx.fill();
-                }
+        // Other players
+        ctx.fillStyle = '#ff4757';
+        this.otherPlayers.forEach(p => {
+            if (!p.position) return;
+            const pos = Array.isArray(p.position) ? p.position : [p.position.x, p.position.y, p.position.z];
+            const px = size / 2 + (pos[0] - this.player.position.x) * scale;
+            const pz = size / 2 + (pos[2] - this.player.position.z) * scale;
+            const dist = Math.sqrt((px - size / 2) ** 2 + (pz - size / 2) ** 2);
+            if (dist < size / 2 - 5) {
+                ctx.beginPath();
+                ctx.arc(px, pz, 4, 0, Math.PI * 2);
+                ctx.fill();
             }
         });
 
-        // Draw player (center)
-        ctx.fillStyle = '#00ff88';
+        // Player
+        ctx.fillStyle = '#00ffaa';
         ctx.beginPath();
         ctx.arc(size / 2, size / 2, 5, 0, Math.PI * 2);
         ctx.fill();
 
-        // Draw player direction
-        ctx.strokeStyle = '#00ff88';
+        // Direction
+        ctx.strokeStyle = '#00ffaa';
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(size / 2, size / 2);
         ctx.lineTo(
-            size / 2 + Math.sin(this.player.rotation.y) * 15,
-            size / 2 - Math.cos(this.player.rotation.y) * 15
+            size / 2 + Math.sin(this.player.rotation.y) * 12,
+            size / 2 - Math.cos(this.player.rotation.y) * 12
         );
         ctx.stroke();
     }
 
-    broadcastPosition() {
+    broadcastState() {
         this.broadcast({
             type: 'player_update',
-            player: {
-                position: this.player.position,
-                rotation: this.player.rotation,
-                speed: this.player.speed,
-                health: this.player.health,
-                kills: this.player.kills,
-                deaths: this.player.deaths
+            position: this.player.position.toArray(),
+            rotation: [this.player.rotation.x, this.player.rotation.y, this.player.rotation.z],
+            speed: this.player.speed,
+            health: this.player.health,
+            kills: this.player.kills,
+            deaths: this.player.deaths
+        });
+    }
+
+    // ==================== OTHER PLAYERS ====================
+
+    addPlayer(data) {
+        this.otherPlayers.set(data.id, data);
+    }
+
+    removePlayer(id) {
+        this.otherPlayers.delete(id);
+        const mesh = this.otherPlayerMeshes.get(id);
+        if (mesh) {
+            this.scene.remove(mesh);
+            this.otherPlayerMeshes.delete(id);
+        }
+    }
+
+    updateOtherPlayer(id, data) {
+        let p = this.otherPlayers.get(id);
+        if (!p) {
+            p = { id };
+            this.otherPlayers.set(id, p);
+        }
+        Object.assign(p, data);
+    }
+
+    syncOtherPlayers() {
+        this.otherPlayers.forEach((data, id) => {
+            let mesh = this.otherPlayerMeshes.get(id);
+
+            if (!mesh) {
+                const stats = this.aircraftStats[data.aircraft] || this.aircraftStats.cessna;
+                mesh = this.createAircraftMesh(stats.color, stats.accentColor);
+                this.scene.add(mesh);
+                this.otherPlayerMeshes.set(id, mesh);
+            }
+
+            if (data.position) {
+                const pos = Array.isArray(data.position) ? data.position : [data.position.x, data.position.y, data.position.z];
+                mesh.position.lerp(new THREE.Vector3(...pos), 0.15);
+            }
+
+            if (data.rotation) {
+                const rot = Array.isArray(data.rotation) ? data.rotation : [data.rotation.x, data.rotation.y, data.rotation.z];
+                const targetQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(...rot, 'YXZ'));
+                mesh.quaternion.slerp(targetQuat, 0.15);
             }
         });
     }
 
-    // ==================== Combat ====================
+    // ==================== COMBAT ====================
 
     fire() {
-        if (this.player.aircraft === 'cessna') return; // No weapons
+        if (this.player.aircraft === 'cessna') return;
 
-        // Create projectile visually
-        const projectileGeometry = new THREE.SphereGeometry(1, 8, 8);
-        const projectileMaterial = new THREE.MeshBasicMaterial({
-            color: this.player.aircraft === 'cyberpink' ? 0xff00ff : 0xff0000
-        });
-        const projectile = new THREE.Mesh(projectileGeometry, projectileMaterial);
+        const stats = this.aircraftStats[this.player.aircraft];
+        const dir = new THREE.Vector3(0, 0, 1).applyQuaternion(this.playerMesh.quaternion);
+        const pos = this.player.position.clone().add(dir.clone().multiplyScalar(20));
 
-        projectile.position.copy(this.playerMesh.position);
+        this.createProjectile(pos.toArray(), dir.toArray(), this.peerId, stats.accentColor);
+        this.playSound('fire');
 
-        const direction = new THREE.Vector3(0, 0, 1);
-        direction.applyQuaternion(this.playerMesh.quaternion);
-
-        this.scene.add(projectile);
-
-        // Animate projectile
-        const speed = 500;
-        const startTime = performance.now();
-
-        const animateProjectile = () => {
-            const elapsed = (performance.now() - startTime) / 1000;
-            if (elapsed > 3) {
-                this.scene.remove(projectile);
-                return;
-            }
-
-            projectile.position.add(direction.clone().multiplyScalar(speed * 0.016));
-
-            // Check collision with other players
-            this.otherPlayers.forEach((p, id) => {
-                if (p.position) {
-                    const dist = projectile.position.distanceTo(
-                        new THREE.Vector3(p.position.x, p.position.y, p.position.z)
-                    );
-                    if (dist < 20) {
-                        this.broadcast({
-                            type: 'player_hit',
-                            targetId: id,
-                            shooterId: this.peerId,
-                            damage: 25
-                        });
-                        this.scene.remove(projectile);
-                        return;
-                    }
-                }
-            });
-
-            requestAnimationFrame(animateProjectile);
-        };
-
-        animateProjectile();
-
-        // Broadcast fire event
         this.broadcast({
-            type: 'player_fire',
-            position: this.player.position,
-            rotation: this.player.rotation
+            type: 'fire',
+            position: pos.toArray(),
+            direction: dir.toArray(),
+            color: stats.accentColor
         });
     }
 
-    handlePlayerFire(fromPeer, data) {
-        // Create visual projectile for other player's fire
-        const playerData = this.otherPlayers.get(fromPeer);
-        if (!playerData) return;
+    createProjectile(pos, dir, owner, color) {
+        const geo = new THREE.SphereGeometry(1.5, 8, 8);
+        const mat = new THREE.MeshBasicMaterial({ color });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(...pos);
 
-        // Similar projectile animation...
+        // Trail
+        const trailGeo = new THREE.CylinderGeometry(0.5, 1.5, 10, 8);
+        trailGeo.rotateX(Math.PI / 2);
+        const trailMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.5 });
+        const trail = new THREE.Mesh(trailGeo, trailMat);
+        trail.position.z = -5;
+        mesh.add(trail);
+
+        this.scene.add(mesh);
+        this.projectiles.push({
+            mesh,
+            direction: new THREE.Vector3(...dir),
+            owner,
+            time: 0
+        });
     }
 
-    handlePlayerHit(data) {
-        if (data.targetId === this.peerId) {
-            this.player.health -= data.damage;
+    updateProjectiles(delta) {
+        for (let i = this.projectiles.length - 1; i >= 0; i--) {
+            const p = this.projectiles[i];
+            p.time += delta;
 
-            if (this.player.health <= 0) {
-                this.handleDeath(data.shooterId);
+            if (p.time > 3) {
+                this.scene.remove(p.mesh);
+                this.projectiles.splice(i, 1);
+                continue;
             }
+
+            p.mesh.position.add(p.direction.clone().multiplyScalar(500 * delta));
+
+            // Collision with other players
+            if (p.owner === this.peerId) {
+                this.otherPlayers.forEach((data, id) => {
+                    if (!data.position) return;
+                    const pos = Array.isArray(data.position) ? data.position : [data.position.x, data.position.y, data.position.z];
+                    const dist = p.mesh.position.distanceTo(new THREE.Vector3(...pos));
+
+                    if (dist < 25) {
+                        this.broadcast({ type: 'hit', target: id, shooter: this.peerId, damage: 25 });
+                        this.createExplosion(p.mesh.position.clone());
+                        this.scene.remove(p.mesh);
+                        this.projectiles.splice(i, 1);
+                    }
+                });
+            }
+
+            // Self collision (from others)
+            if (p.owner !== this.peerId) {
+                const dist = p.mesh.position.distanceTo(this.player.position);
+                if (dist < 20) {
+                    this.player.health -= 25;
+                    this.playSound('hit');
+                    this.createExplosion(p.mesh.position.clone());
+                    this.scene.remove(p.mesh);
+                    this.projectiles.splice(i, 1);
+
+                    if (this.player.health <= 0) this.handleDeath(p.owner);
+                }
+            }
+        }
+    }
+
+    createExplosion(pos) {
+        this.playSound('explosion');
+
+        const group = new THREE.Group();
+
+        for (let i = 0; i < 15; i++) {
+            const geo = new THREE.SphereGeometry(2 + Math.random() * 4, 8, 8);
+            const mat = new THREE.MeshBasicMaterial({
+                color: new THREE.Color().setHSL(0.05 + Math.random() * 0.1, 1, 0.5),
+                transparent: true
+            });
+            const sphere = new THREE.Mesh(geo, mat);
+            sphere.userData.velocity = new THREE.Vector3(
+                Math.random() - 0.5,
+                Math.random() - 0.5,
+                Math.random() - 0.5
+            ).multiplyScalar(50);
+            group.add(sphere);
+        }
+
+        group.position.copy(pos);
+        this.scene.add(group);
+        this.explosions.push({ group, time: 0 });
+    }
+
+    updateExplosions(delta) {
+        for (let i = this.explosions.length - 1; i >= 0; i--) {
+            const e = this.explosions[i];
+            e.time += delta;
+
+            if (e.time > 1) {
+                this.scene.remove(e.group);
+                this.explosions.splice(i, 1);
+                continue;
+            }
+
+            e.group.children.forEach(c => {
+                c.position.add(c.userData.velocity.clone().multiplyScalar(delta));
+                c.material.opacity = 1 - e.time;
+                c.scale.multiplyScalar(1 + delta * 2);
+            });
         }
     }
 
@@ -1007,113 +1078,80 @@ class FlyGame {
         this.player.deaths++;
         this.player.health = 100;
 
-        // Respawn
-        this.player.position = {
-            x: Math.random() * 1000 - 500,
-            y: 200,
-            z: Math.random() * 1000 - 500
-        };
+        const killerData = this.otherPlayers.get(killerId);
+        const killerName = killerData?.name || 'Unknown';
 
-        // Notify others
         this.broadcast({
-            type: 'player_death',
-            playerId: this.peerId,
-            killerId: killerId
+            type: 'death',
+            killer: killerId,
+            killerName,
+            victim: this.peerId,
+            victimName: this.player.name
         });
 
-        // Update killer's score
-        if (killerId) {
-            const killer = this.otherPlayers.get(killerId);
-            if (killer) {
-                killer.kills = (killer.kills || 0) + 1;
-            }
-        }
-    }
+        this.addKillFeed(killerName, this.player.name);
 
-    handlePlayerDeath(data) {
-        if (data.killerId === this.peerId) {
-            this.player.kills++;
-            this.addChatMessage('System', `You killed ${this.otherPlayers.get(data.playerId)?.name || 'someone'}!`);
-        }
+        // Respawn
+        this.player.position.set(
+            Math.random() * 1000 - 500,
+            200 + Math.random() * 100,
+            Math.random() * 1000 - 500
+        );
     }
 
     handleCrash() {
+        this.createExplosion(this.player.position.clone());
         this.player.health = 0;
         this.handleDeath(null);
-        this.addChatMessage('System', 'You crashed!');
+        this.addChat('System', 'You crashed!', true);
     }
 
-    // ==================== Player Management ====================
+    addKillFeed(killer, victim) {
+        const feed = document.getElementById('kill-feed');
+        const item = document.createElement('div');
+        item.className = 'kill-item';
+        item.innerHTML = `<span class="killer">${this.escapeHtml(killer || 'Environment')}</span> killed <span class="victim">${this.escapeHtml(victim)}</span>`;
+        feed.appendChild(item);
 
-    addPlayer(playerData) {
-        this.otherPlayers.set(playerData.id, playerData);
+        setTimeout(() => item.remove(), 3000);
     }
 
-    removePlayer(playerId) {
-        this.otherPlayers.delete(playerId);
+    // ==================== CHAT ====================
 
-        const mesh = this.otherPlayerMeshes.get(playerId);
-        if (mesh) {
-            this.scene.remove(mesh);
-            this.otherPlayerMeshes.delete(playerId);
-        }
+    sendChat(msg) {
+        if (!msg.trim()) return;
+        this.addChat(this.player.name, msg);
+        this.broadcast({ type: 'chat', name: this.player.name, msg });
     }
 
-    updatePlayerData(playerId, data) {
-        const player = this.otherPlayers.get(playerId);
-        if (player) {
-            Object.assign(player, data);
-        }
+    addChat(name, msg, system = false) {
+        const container = document.getElementById('chat-messages');
+        const el = document.createElement('div');
+        el.className = 'chat-message' + (system ? ' system' : '');
+        el.innerHTML = system ? msg : `<span class="sender">${this.escapeHtml(name)}:</span> ${this.escapeHtml(msg)}`;
+        container.appendChild(el);
+        container.scrollTop = container.scrollHeight;
+
+        while (container.children.length > 50) container.removeChild(container.firstChild);
     }
 
-    // ==================== Chat ====================
-
-    sendChat(message) {
-        if (!message.trim()) return;
-
-        this.addChatMessage(this.player.name, message);
-
-        this.broadcast({
-            type: 'chat',
-            name: this.player.name,
-            message: message
-        });
-    }
-
-    addChatMessage(name, message) {
-        const chatMessages = document.getElementById('chat-messages');
-        const msgEl = document.createElement('div');
-        msgEl.className = 'chat-message';
-        msgEl.innerHTML = `<span class="name">${this.escapeHtml(name)}:</span> ${this.escapeHtml(message)}`;
-        chatMessages.appendChild(msgEl);
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-
-        // Limit messages
-        while (chatMessages.children.length > 50) {
-            chatMessages.removeChild(chatMessages.firstChild);
-        }
-    }
-
-    // ==================== UI Helpers ====================
+    // ==================== UI ====================
 
     updateConnectionStatus(status, text) {
-        const statusEl = document.getElementById('connection-status');
-        statusEl.className = `connection-status ${status}`;
-        statusEl.textContent = text;
+        const el = document.getElementById('connection-status');
+        el.className = `connection-status ${status}`;
+        el.textContent = text;
     }
 
     hideLoading() {
-        setTimeout(() => {
-            document.getElementById('loading-overlay').classList.add('hidden');
-        }, 500);
+        setTimeout(() => document.getElementById('loading').classList.add('hidden'), 500);
     }
 
-    onWindowResize() {
-        if (this.camera && this.renderer) {
-            this.camera.aspect = window.innerWidth / window.innerHeight;
-            this.camera.updateProjectionMatrix();
-            this.renderer.setSize(window.innerWidth, window.innerHeight);
-        }
+    onResize() {
+        if (!this.camera || !this.renderer) return;
+        this.camera.aspect = window.innerWidth / window.innerHeight;
+        this.camera.updateProjectionMatrix();
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
     }
 
     escapeHtml(text) {
@@ -1122,330 +1160,213 @@ class FlyGame {
         return div.innerHTML;
     }
 
-    initPreviewCanvas() {
-        const canvas = document.getElementById('preview-canvas');
-        if (!canvas) return;
-
-        const ctx = canvas.getContext('2d');
-        canvas.width = 250;
-        canvas.height = 150;
-
-        // Simple aircraft preview
-        const drawPreview = () => {
-            ctx.fillStyle = '#1a1a2e';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            const stats = this.aircraftStats[this.player.aircraft];
-            const color = '#' + stats.color.toString(16).padStart(6, '0');
-
-            // Draw simple aircraft shape
-            ctx.fillStyle = color;
-            ctx.beginPath();
-
-            // Fuselage
-            ctx.ellipse(125, 75, 40, 15, 0, 0, Math.PI * 2);
-            ctx.fill();
-
-            // Wings
-            ctx.fillRect(85, 70, 80, 8);
-
-            // Tail
-            ctx.fillRect(100, 65, 30, 5);
-            ctx.fillRect(115, 50, 5, 20);
-
-            // Cockpit
-            ctx.fillStyle = '#87ceeb';
-            ctx.beginPath();
-            ctx.ellipse(150, 72, 10, 8, 0, 0, Math.PI * 2);
-            ctx.fill();
-        };
-
-        drawPreview();
-
-        // Update on aircraft change
-        document.getElementById('aircraft-select').addEventListener('change', (e) => {
-            this.player.aircraft = e.target.value;
-            drawPreview();
-            this.updateAircraftStats();
-        });
-    }
-
-    updateAircraftStats() {
-        const stats = this.aircraftStats[this.player.aircraft];
-        document.getElementById('stat-speed').textContent = `${stats.maxSpeed} kts`;
-        document.getElementById('stat-alt').textContent = `${stats.maxAlt.toLocaleString()} ft`;
-        document.getElementById('stat-agility').textContent = stats.agility;
-        document.getElementById('stat-weapons').textContent = stats.weapons;
-    }
-
     endGame() {
         this.state = 'lobby';
+        alert(`Game Over!\n\nKills: ${this.player.kills}\nDeaths: ${this.player.deaths}`);
 
-        // Show results
-        alert(`Game Over!\n\nYour Score:\nKills: ${this.player.kills}\nDeaths: ${this.player.deaths}`);
-
-        // Return to lobby
         document.getElementById('game-container').classList.remove('active');
         document.getElementById('lobby').classList.remove('hidden');
 
-        // Cleanup
         this.cleanup();
     }
 
     exitGame() {
         this.state = 'lobby';
+        this.broadcast({ type: 'player_leave', id: this.peerId });
 
-        // Notify others
-        this.broadcast({
-            type: 'player_leave',
-            playerId: this.peerId
-        });
-
-        // Return to lobby
         document.getElementById('game-container').classList.remove('active');
         document.getElementById('lobby').classList.remove('hidden');
 
-        // Cleanup
         this.cleanup();
     }
 
     cleanup() {
-        // Clear scene
         if (this.scene) {
-            while (this.scene.children.length > 0) {
-                this.scene.remove(this.scene.children[0]);
-            }
+            while (this.scene.children.length > 0) this.scene.remove(this.scene.children[0]);
         }
-
-        // Clear connections
-        this.connections.forEach(conn => conn.close());
+        this.connections.forEach(c => c.close());
         this.connections.clear();
-
-        // Reset state
         this.otherPlayers.clear();
         this.otherPlayerMeshes.clear();
+        this.projectiles = [];
+        this.explosions = [];
         this.currentRoom = null;
         this.isHost = false;
         this.gameTime = 15 * 60;
     }
 
-    // ==================== Event Listeners ====================
+    // ==================== EVENTS ====================
 
     setupEventListeners() {
         // Keyboard
-        document.addEventListener('keydown', (e) => {
+        document.addEventListener('keydown', e => {
             this.keys[e.code] = true;
 
-            if (e.code === 'Space' && this.state === 'playing') {
-                this.fire();
-            }
-
-            if (e.code === 'KeyV' && this.state === 'playing') {
-                const modes = ['third', 'cockpit', 'chase'];
-                const currentIndex = modes.indexOf(this.cameraMode);
-                this.cameraMode = modes[(currentIndex + 1) % modes.length];
-            }
-
-            if (e.code === 'Enter' && this.state === 'playing') {
-                const chatInput = document.getElementById('chat-input');
-                if (document.activeElement === chatInput) {
-                    this.sendChat(chatInput.value);
-                    chatInput.value = '';
-                    chatInput.blur();
-                } else {
-                    chatInput.focus();
+            if (this.state === 'playing') {
+                if (e.code === 'Space') {
+                    e.preventDefault();
+                    this.fire();
+                }
+                if (e.code === 'KeyV') {
+                    const modes = ['third', 'cockpit', 'chase'];
+                    this.cameraMode = modes[(modes.indexOf(this.cameraMode) + 1) % modes.length];
+                }
+                if (e.code === 'Enter') {
+                    const input = document.getElementById('chat-input');
+                    if (document.activeElement === input) {
+                        this.sendChat(input.value);
+                        input.value = '';
+                        input.blur();
+                    } else {
+                        input.focus();
+                    }
+                    e.preventDefault();
                 }
             }
         });
 
-        document.addEventListener('keyup', (e) => {
-            this.keys[e.code] = false;
-        });
+        document.addEventListener('keyup', e => this.keys[e.code] = false);
 
         // Player name
         const nameInput = document.getElementById('player-name');
-        nameInput.value = localStorage.getItem('flyPlayerName') || '';
-        nameInput.addEventListener('input', (e) => {
+        nameInput.value = localStorage.getItem('flyName') || '';
+        nameInput.addEventListener('input', e => {
             this.player.name = e.target.value || 'Pilot';
-            localStorage.setItem('flyPlayerName', e.target.value);
+            localStorage.setItem('flyName', e.target.value);
         });
         this.player.name = nameInput.value || 'Pilot';
 
-        // Aircraft select
-        document.getElementById('aircraft-select').addEventListener('change', (e) => {
-            this.player.aircraft = e.target.value;
+        // Aircraft selection
+        document.querySelectorAll('.aircraft-card').forEach(card => {
+            card.addEventListener('click', () => {
+                document.querySelectorAll('.aircraft-card').forEach(c => c.classList.remove('selected'));
+                card.classList.add('selected');
+                this.player.aircraft = card.dataset.aircraft;
+                this.updateStats();
+            });
         });
 
-        // Quick play
-        document.getElementById('quick-play-btn').addEventListener('click', () => {
-            if (!this.player.name.trim()) {
-                this.player.name = 'Pilot_' + Math.random().toString(36).substr(2, 4);
-            }
-            this.quickPlay();
-        });
+        // Quick Play
+        document.getElementById('quick-play-btn').addEventListener('click', () => this.quickPlay());
 
-        // Create room button
+        // Create Room
         document.getElementById('create-room-btn').addEventListener('click', () => {
-            document.getElementById('create-room-modal').classList.remove('hidden');
+            document.getElementById('create-modal').classList.add('active');
         });
 
-        // Cancel create room
         document.getElementById('cancel-create').addEventListener('click', () => {
-            document.getElementById('create-room-modal').classList.add('hidden');
+            document.getElementById('create-modal').classList.remove('active');
         });
 
-        // Confirm create room
         document.getElementById('confirm-create').addEventListener('click', () => {
             const name = document.getElementById('room-name').value;
-            const maxPlayers = parseInt(document.getElementById('max-players').value);
-            const gameMode = document.getElementById('game-mode').value;
+            const max = parseInt(document.getElementById('max-players').value);
+            const mode = document.getElementById('game-mode').value;
 
             if (!this.player.name.trim()) {
                 this.player.name = 'Pilot_' + Math.random().toString(36).substr(2, 4);
+                document.getElementById('player-name').value = this.player.name;
             }
 
-            document.getElementById('create-room-modal').classList.add('hidden');
-            this.createRoom(name, maxPlayers, gameMode);
+            document.getElementById('create-modal').classList.remove('active');
+            this.createRoom(name, max, mode);
         });
 
-        // Refresh rooms
-        document.getElementById('refresh-btn').addEventListener('click', () => {
-            this.discoverRooms();
-        });
+        // Refresh
+        document.getElementById('refresh-btn').addEventListener('click', () => this.discoverRooms());
 
-        // Exit game
-        document.getElementById('exit-game').addEventListener('click', () => {
-            this.exitGame();
-        });
+        // Exit
+        document.getElementById('exit-game').addEventListener('click', () => this.exitGame());
 
-        // Chat send
+        // Chat
         document.getElementById('chat-send').addEventListener('click', () => {
-            const chatInput = document.getElementById('chat-input');
-            this.sendChat(chatInput.value);
-            chatInput.value = '';
+            const input = document.getElementById('chat-input');
+            this.sendChat(input.value);
+            input.value = '';
         });
 
-        // Mobile controls
-        this.setupMobileControls();
+        // Mobile
+        this.setupMobile();
+
+        // Resume audio on interaction
+        document.addEventListener('click', () => {
+            if (this.audioCtx?.state === 'suspended') this.audioCtx.resume();
+        }, { once: true });
     }
 
-    setupMobileControls() {
+    updateStats() {
+        const stats = this.aircraftStats[this.player.aircraft];
+        document.getElementById('stat-speed').textContent = `${stats.maxSpeed} kts`;
+        document.getElementById('stat-alt').textContent = `${stats.maxAlt.toLocaleString()} ft`;
+        document.getElementById('stat-agility').textContent = stats.agility > 70 ? 'High' : stats.agility > 40 ? 'Medium' : 'Low';
+        document.getElementById('stat-weapons').textContent = stats.weapons > 0 ? (stats.weapons > 80 ? 'High' : 'Medium') : 'None';
+
+        document.getElementById('speed-bar').style.width = `${stats.maxSpeed / 15}%`;
+        document.getElementById('alt-bar').style.width = `${stats.maxAlt / 500}%`;
+        document.getElementById('agility-bar').style.width = `${stats.agility}%`;
+        document.getElementById('weapons-bar').style.width = `${stats.weapons}%`;
+    }
+
+    setupMobile() {
         const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        if (isMobile) document.getElementById('mobile-controls').style.display = 'flex';
 
-        if (isMobile) {
-            document.getElementById('mobile-controls').style.display = 'flex';
-        }
+        // Joysticks
+        const setupJoystick = (stickId, knobId, onMove, onEnd) => {
+            const stick = document.getElementById(stickId);
+            const knob = document.getElementById(knobId);
+            let active = false;
 
-        // Joystick handling
-        const leftJoystick = document.getElementById('joystick-left');
-        const leftKnob = document.getElementById('joystick-knob-left');
-        const rightJoystick = document.getElementById('joystick-right');
-        const rightKnob = document.getElementById('joystick-knob-right');
+            const handle = (e) => {
+                const rect = stick.getBoundingClientRect();
+                const touch = e.touches[0];
+                const x = (touch.clientX - rect.left - rect.width / 2) / (rect.width / 2);
+                const y = (touch.clientY - rect.top - rect.height / 2) / (rect.height / 2);
+                const dist = Math.min(1, Math.sqrt(x * x + y * y));
+                const angle = Math.atan2(y, x);
 
-        let leftActive = false;
-        let rightActive = false;
+                knob.style.transform = `translate(calc(-50% + ${Math.cos(angle) * dist * 35}px), calc(-50% + ${Math.sin(angle) * dist * 35}px))`;
+                onMove(x * dist, y * dist);
+            };
 
-        const handleJoystick = (joystick, knob, e, isLeft) => {
-            const rect = joystick.getBoundingClientRect();
-            const centerX = rect.width / 2;
-            const centerY = rect.height / 2;
-
-            const touch = e.touches[0];
-            const x = touch.clientX - rect.left - centerX;
-            const y = touch.clientY - rect.top - centerY;
-
-            const maxDist = 35;
-            const dist = Math.min(maxDist, Math.sqrt(x * x + y * y));
-            const angle = Math.atan2(y, x);
-
-            const knobX = Math.cos(angle) * dist;
-            const knobY = Math.sin(angle) * dist;
-
-            knob.style.transform = `translate(calc(-50% + ${knobX}px), calc(-50% + ${knobY}px))`;
-
-            // Apply to controls
-            const normalX = knobX / maxDist;
-            const normalY = knobY / maxDist;
-
-            if (isLeft) {
-                // Left stick controls roll/pitch
-                if (normalX < -0.3) this.keys['ArrowLeft'] = true;
-                else if (normalX > 0.3) this.keys['ArrowRight'] = true;
-                else {
-                    this.keys['ArrowLeft'] = false;
-                    this.keys['ArrowRight'] = false;
-                }
-
-                if (normalY < -0.3) this.keys['KeyQ'] = true;
-                else if (normalY > 0.3) this.keys['KeyE'] = true;
-                else {
-                    this.keys['KeyQ'] = false;
-                    this.keys['KeyE'] = false;
-                }
-            } else {
-                // Right stick controls throttle
-                if (normalY < -0.3) this.keys['KeyW'] = true;
-                else if (normalY > 0.3) this.keys['KeyS'] = true;
-                else {
-                    this.keys['KeyW'] = false;
-                    this.keys['KeyS'] = false;
-                }
-            }
+            stick.addEventListener('touchstart', e => { e.preventDefault(); active = true; handle(e); });
+            stick.addEventListener('touchmove', e => { e.preventDefault(); if (active) handle(e); });
+            stick.addEventListener('touchend', () => {
+                active = false;
+                knob.style.transform = 'translate(-50%, -50%)';
+                onEnd();
+            });
         };
 
-        leftJoystick.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            leftActive = true;
-            handleJoystick(leftJoystick, leftKnob, e, true);
-        });
+        setupJoystick('joystick-left', 'knob-left',
+            (x, y) => {
+                this.keys['ArrowLeft'] = x < -0.3;
+                this.keys['ArrowRight'] = x > 0.3;
+                this.keys['ArrowUp'] = y < -0.3;
+                this.keys['ArrowDown'] = y > 0.3;
+            },
+            () => {
+                this.keys['ArrowLeft'] = this.keys['ArrowRight'] = false;
+                this.keys['ArrowUp'] = this.keys['ArrowDown'] = false;
+            }
+        );
 
-        leftJoystick.addEventListener('touchmove', (e) => {
-            e.preventDefault();
-            if (leftActive) handleJoystick(leftJoystick, leftKnob, e, true);
-        });
+        setupJoystick('joystick-right', 'knob-right',
+            (x, y) => {
+                this.keys['KeyW'] = y < -0.3;
+                this.keys['KeyS'] = y > 0.3;
+            },
+            () => {
+                this.keys['KeyW'] = this.keys['KeyS'] = false;
+            }
+        );
 
-        leftJoystick.addEventListener('touchend', () => {
-            leftActive = false;
-            leftKnob.style.transform = 'translate(-50%, -50%)';
-            this.keys['ArrowLeft'] = false;
-            this.keys['ArrowRight'] = false;
-            this.keys['KeyQ'] = false;
-            this.keys['KeyE'] = false;
-        });
-
-        rightJoystick.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            rightActive = true;
-            handleJoystick(rightJoystick, rightKnob, e, false);
-        });
-
-        rightJoystick.addEventListener('touchmove', (e) => {
-            e.preventDefault();
-            if (rightActive) handleJoystick(rightJoystick, rightKnob, e, false);
-        });
-
-        rightJoystick.addEventListener('touchend', () => {
-            rightActive = false;
-            rightKnob.style.transform = 'translate(-50%, -50%)';
-            this.keys['KeyW'] = false;
-            this.keys['KeyS'] = false;
-        });
-
-        // Fire button
-        document.getElementById('fire-btn').addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            this.fire();
-        });
-
-        // Boost button
-        document.getElementById('boost-btn').addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            this.player.throttle = 1;
-        });
+        document.getElementById('btn-fire')?.addEventListener('touchstart', e => { e.preventDefault(); this.fire(); });
+        document.getElementById('btn-boost')?.addEventListener('touchstart', e => { e.preventDefault(); this.player.throttle = 1; });
     }
 }
 
-// Initialize game
+// Init
 window.addEventListener('DOMContentLoaded', () => {
     window.game = new FlyGame();
 });

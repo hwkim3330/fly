@@ -3,7 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>FLY - P2P Multiplayer Flight Game</title>
+    <title>FLY - P2P Multiplayer Flight Combat</title>
+    <meta name="description" content="Free multiplayer flight combat game. No downloads, play instantly in your browser.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
         * {
             margin: 0;
@@ -11,200 +14,399 @@
             box-sizing: border-box;
         }
 
+        :root {
+            --primary: #00ffaa;
+            --secondary: #00d4ff;
+            --danger: #ff4757;
+            --warning: #ffa502;
+            --dark: #0a0a0f;
+            --darker: #050508;
+            --glass: rgba(10, 10, 15, 0.85);
+            --glass-border: rgba(0, 255, 170, 0.2);
+        }
+
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            font-family: 'Rajdhani', sans-serif;
+            background: var(--darker);
             color: white;
             overflow: hidden;
             height: 100vh;
+            cursor: default;
         }
 
-        /* Lobby Screen */
+        /* ==================== LOBBY ==================== */
         #lobby {
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            inset: 0;
+            background: linear-gradient(135deg, #0a0a1a 0%, #1a0a2e 50%, #0a1a2e 100%);
+            z-index: 1000;
             display: flex;
             flex-direction: column;
-            z-index: 1000;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
         }
 
-        #lobby.hidden {
-            display: none;
+        #lobby.hidden { display: none; }
+
+        /* Animated Background */
+        .lobby-bg {
+            position: absolute;
+            inset: 0;
+            overflow: hidden;
+            z-index: 0;
         }
 
+        .lobby-bg::before {
+            content: '';
+            position: absolute;
+            width: 200%;
+            height: 200%;
+            background:
+                radial-gradient(circle at 20% 80%, rgba(0, 255, 170, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(0, 212, 255, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 50% 50%, rgba(255, 71, 87, 0.05) 0%, transparent 50%);
+            animation: bgPulse 10s ease-in-out infinite;
+        }
+
+        @keyframes bgPulse {
+            0%, 100% { transform: translate(-25%, -25%) scale(1); }
+            50% { transform: translate(-25%, -25%) scale(1.1); }
+        }
+
+        /* Header */
         .lobby-header {
+            position: relative;
+            z-index: 1;
             text-align: center;
-            padding: 20px;
-            background: rgba(0,0,0,0.3);
+            padding: 30px 20px;
         }
 
-        .lobby-header h1 {
-            font-size: 3em;
-            background: linear-gradient(45deg, #00d4ff, #00ff88);
+        .logo {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 5em;
+            font-weight: 900;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 50%, var(--primary) 100%);
+            background-size: 200% 200%;
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
-            text-shadow: 0 0 30px rgba(0,212,255,0.5);
+            animation: logoShine 3s ease-in-out infinite;
+            text-shadow: 0 0 60px rgba(0, 255, 170, 0.5);
+            letter-spacing: 0.2em;
         }
 
-        .lobby-header p {
-            color: #aaa;
+        @keyframes logoShine {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+
+        .tagline {
+            font-size: 1.1em;
+            color: rgba(255,255,255,0.6);
             margin-top: 5px;
+            letter-spacing: 0.3em;
+            text-transform: uppercase;
         }
 
-        /* Ad Banner Top */
+        /* Ad Banners */
         .ad-banner {
-            background: rgba(255,255,255,0.1);
-            border: 2px dashed rgba(255,255,255,0.3);
-            text-align: center;
-            padding: 15px;
-            color: #888;
-            font-size: 14px;
+            background: linear-gradient(90deg, #1a1a2e, #2a1a3e, #1a1a2e);
+            border: 1px solid var(--glass-border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
         }
 
         .ad-banner.top {
-            border-radius: 0;
+            height: 90px;
+            margin: 0 20px;
+            border-radius: 8px;
         }
 
         .ad-banner.bottom {
-            margin-top: auto;
+            height: 90px;
+            margin: 0 20px 20px;
+            border-radius: 8px;
         }
 
+        .ad-content {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            padding: 15px 30px;
+        }
+
+        .ad-icon {
+            font-size: 2.5em;
+        }
+
+        .ad-text h3 {
+            font-family: 'Orbitron', sans-serif;
+            color: var(--primary);
+            font-size: 1.2em;
+        }
+
+        .ad-text p {
+            color: rgba(255,255,255,0.7);
+            font-size: 0.9em;
+        }
+
+        .ad-cta {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: var(--dark);
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-weight: 700;
+            text-decoration: none;
+            font-size: 0.85em;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+
+        .ad-cta:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 20px rgba(0, 255, 170, 0.5);
+        }
+
+        .ad-badge {
+            position: absolute;
+            top: 5px;
+            right: 10px;
+            font-size: 0.65em;
+            color: rgba(255,255,255,0.3);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        /* Main Content */
         .lobby-content {
             flex: 1;
             display: flex;
             padding: 20px;
             gap: 20px;
+            position: relative;
+            z-index: 1;
             overflow: hidden;
         }
 
-        /* Left Panel - Player Setup */
-        .player-setup {
-            width: 300px;
-            background: rgba(0,0,0,0.3);
-            border-radius: 15px;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
+        /* Glass Panel */
+        .glass-panel {
+            background: var(--glass);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            backdrop-filter: blur(10px);
         }
 
-        .player-setup h2 {
-            color: #00d4ff;
-            font-size: 1.2em;
-            border-bottom: 1px solid rgba(0,212,255,0.3);
+        /* Left Panel */
+        .player-setup {
+            width: 320px;
+            padding: 25px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .panel-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.1em;
+            color: var(--primary);
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
             padding-bottom: 10px;
+            border-bottom: 1px solid var(--glass-border);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .panel-title::before {
+            content: '';
+            width: 4px;
+            height: 20px;
+            background: var(--primary);
+            border-radius: 2px;
         }
 
         .input-group {
             display: flex;
             flex-direction: column;
-            gap: 5px;
+            gap: 8px;
         }
 
         .input-group label {
-            color: #aaa;
-            font-size: 12px;
+            font-size: 0.85em;
+            color: rgba(255,255,255,0.6);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
         }
 
         .input-group input, .input-group select {
-            background: rgba(255,255,255,0.1);
-            border: 1px solid rgba(255,255,255,0.2);
+            background: rgba(0,0,0,0.4);
+            border: 1px solid var(--glass-border);
             border-radius: 8px;
-            padding: 10px;
+            padding: 12px 15px;
             color: white;
-            font-size: 14px;
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 1em;
+            transition: all 0.3s;
         }
 
         .input-group input:focus, .input-group select:focus {
             outline: none;
-            border-color: #00d4ff;
+            border-color: var(--primary);
+            box-shadow: 0 0 15px rgba(0, 255, 170, 0.2);
         }
 
-        .aircraft-preview {
-            background: rgba(0,0,0,0.3);
-            border-radius: 10px;
-            padding: 15px;
-            text-align: center;
-        }
-
-        .aircraft-preview canvas {
-            width: 100%;
-            height: 150px;
-            border-radius: 8px;
-        }
-
-        .aircraft-stats {
+        /* Aircraft Cards */
+        .aircraft-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: repeat(3, 1fr);
             gap: 10px;
-            margin-top: 10px;
-            font-size: 12px;
         }
 
-        .stat {
-            background: rgba(255,255,255,0.05);
-            padding: 8px;
-            border-radius: 5px;
-        }
-
-        .stat-label {
-            color: #888;
-        }
-
-        .stat-value {
-            color: #00ff88;
-            font-weight: bold;
-        }
-
-        /* Center Panel - Room List */
-        .room-list-panel {
-            flex: 1;
+        .aircraft-card {
             background: rgba(0,0,0,0.3);
-            border-radius: 15px;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .room-list-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-        }
-
-        .room-list-header h2 {
-            color: #00d4ff;
-        }
-
-        .btn {
-            background: linear-gradient(45deg, #00d4ff, #00ff88);
-            border: none;
-            border-radius: 8px;
-            padding: 10px 20px;
-            color: #1a1a2e;
-            font-weight: bold;
+            border: 2px solid transparent;
+            border-radius: 12px;
+            padding: 15px 10px;
+            text-align: center;
             cursor: pointer;
             transition: all 0.3s;
         }
 
-        .btn:hover {
-            transform: scale(1.05);
-            box-shadow: 0 0 20px rgba(0,212,255,0.5);
+        .aircraft-card:hover {
+            background: rgba(0, 255, 170, 0.1);
+            border-color: var(--glass-border);
         }
 
-        .btn.secondary {
+        .aircraft-card.selected {
+            border-color: var(--primary);
+            background: rgba(0, 255, 170, 0.15);
+            box-shadow: 0 0 20px rgba(0, 255, 170, 0.3);
+        }
+
+        .aircraft-icon {
+            font-size: 2em;
+            margin-bottom: 5px;
+        }
+
+        .aircraft-name {
+            font-size: 0.75em;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .aircraft-card.selected .aircraft-name {
+            color: var(--primary);
+        }
+
+        /* Stats */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+
+        .stat-item {
+            background: rgba(0,0,0,0.3);
+            border-radius: 8px;
+            padding: 10px;
+        }
+
+        .stat-label {
+            font-size: 0.7em;
+            color: rgba(255,255,255,0.5);
+            text-transform: uppercase;
+        }
+
+        .stat-value {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1em;
+            color: var(--primary);
+        }
+
+        .stat-bar {
+            height: 4px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 2px;
+            margin-top: 5px;
+            overflow: hidden;
+        }
+
+        .stat-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+            border-radius: 2px;
+            transition: width 0.3s;
+        }
+
+        /* Buttons */
+        .btn {
+            font-family: 'Orbitron', sans-serif;
+            font-weight: 700;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            transition: all 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: var(--dark);
+            font-size: 1.1em;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(0, 255, 170, 0.4);
+        }
+
+        .btn-primary::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+            transform: translateX(-100%);
+            transition: transform 0.5s;
+        }
+
+        .btn-primary:hover::after {
+            transform: translateX(100%);
+        }
+
+        .btn-secondary {
             background: rgba(255,255,255,0.1);
             color: white;
+            border: 1px solid var(--glass-border);
         }
 
-        .btn.secondary:hover {
+        .btn-secondary:hover {
             background: rgba(255,255,255,0.2);
+            border-color: var(--primary);
+        }
+
+        /* Center Panel - Rooms */
+        .room-list-panel {
+            flex: 1;
+            padding: 25px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .room-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .room-actions {
+            display: flex;
+            gap: 10px;
         }
 
         .room-list {
@@ -216,10 +418,10 @@
         }
 
         .room-item {
-            background: rgba(255,255,255,0.05);
-            border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 10px;
-            padding: 15px;
+            background: rgba(0,0,0,0.3);
+            border: 1px solid transparent;
+            border-radius: 12px;
+            padding: 20px;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -228,313 +430,444 @@
         }
 
         .room-item:hover {
-            background: rgba(0,212,255,0.1);
-            border-color: #00d4ff;
+            background: rgba(0, 255, 170, 0.1);
+            border-color: var(--glass-border);
+            transform: translateX(5px);
         }
 
         .room-info h3 {
-            color: white;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1em;
             margin-bottom: 5px;
         }
 
-        .room-info p {
-            color: #888;
-            font-size: 12px;
+        .room-meta {
+            display: flex;
+            gap: 15px;
+            font-size: 0.85em;
+            color: rgba(255,255,255,0.6);
         }
 
-        .room-players {
+        .room-meta span {
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 5px;
         }
 
         .player-count {
-            background: rgba(0,255,136,0.2);
-            color: #00ff88;
-            padding: 5px 10px;
-            border-radius: 5px;
-            font-size: 12px;
+            background: rgba(0, 255, 170, 0.2);
+            color: var(--primary);
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.9em;
         }
 
         .no-rooms {
-            text-align: center;
-            color: #666;
-            padding: 40px;
-        }
-
-        /* Right Panel - Ad Space */
-        .ad-sidebar {
-            width: 200px;
-            background: rgba(255,255,255,0.05);
-            border: 2px dashed rgba(255,255,255,0.2);
-            border-radius: 15px;
+            flex: 1;
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
-            color: #666;
-            font-size: 14px;
+            color: rgba(255,255,255,0.4);
         }
 
-        /* Create Room Modal */
+        .no-rooms-icon {
+            font-size: 4em;
+            margin-bottom: 20px;
+            opacity: 0.3;
+        }
+
+        /* Right Panel - Ad */
+        .ad-sidebar {
+            width: 200px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .ad-sidebar .ad-unit {
+            flex: 1;
+            background: linear-gradient(180deg, #1a1a2e, #2a1a3e);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            text-align: center;
+            position: relative;
+        }
+
+        .ad-unit-icon {
+            font-size: 3em;
+            margin-bottom: 15px;
+        }
+
+        .ad-unit h4 {
+            font-family: 'Orbitron', sans-serif;
+            color: var(--secondary);
+            font-size: 0.9em;
+            margin-bottom: 10px;
+        }
+
+        .ad-unit p {
+            font-size: 0.8em;
+            color: rgba(255,255,255,0.6);
+            line-height: 1.4;
+        }
+
+        /* Modal */
         .modal {
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.8);
+            inset: 0;
+            background: rgba(0,0,0,0.9);
             display: flex;
             justify-content: center;
             align-items: center;
             z-index: 2000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s;
         }
 
-        .modal.hidden {
-            display: none;
+        .modal.active {
+            opacity: 1;
+            visibility: visible;
         }
 
         .modal-content {
-            background: linear-gradient(135deg, #1a1a2e, #16213e);
+            background: var(--glass);
+            border: 1px solid var(--glass-border);
             border-radius: 20px;
             padding: 30px;
-            width: 400px;
-            border: 1px solid rgba(0,212,255,0.3);
+            width: 420px;
+            transform: scale(0.9);
+            transition: transform 0.3s;
         }
 
-        .modal-content h2 {
-            color: #00d4ff;
-            margin-bottom: 20px;
+        .modal.active .modal-content {
+            transform: scale(1);
+        }
+
+        .modal-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.5em;
+            color: var(--primary);
             text-align: center;
+            margin-bottom: 25px;
         }
 
         .modal-buttons {
             display: flex;
-            gap: 10px;
-            margin-top: 20px;
+            gap: 15px;
+            margin-top: 25px;
         }
 
         .modal-buttons .btn {
             flex: 1;
         }
 
-        /* Game Screen */
+        /* ==================== GAME ==================== */
         #game-container {
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            inset: 0;
             display: none;
+            background: #000;
         }
 
-        #game-container.active {
-            display: block;
-        }
+        #game-container.active { display: block; }
 
         #game-canvas {
             width: 100%;
             height: 100%;
         }
 
-        /* Game HUD */
+        /* HUD */
         .hud {
             position: fixed;
             pointer-events: none;
+            z-index: 100;
         }
 
-        .hud * {
-            pointer-events: auto;
-        }
+        .hud > * { pointer-events: auto; }
 
-        /* Top HUD */
-        .hud-top {
+        /* Top Ad */
+        .hud-top-ad {
             top: 0;
-            left: 0;
-            right: 0;
-            display: flex;
-            justify-content: space-between;
+            left: 50%;
+            transform: translateX(-50%);
             padding: 10px;
         }
 
-        .hud-top .ad-banner {
-            flex: 1;
-            max-width: 728px;
-            margin: 0 auto;
-            height: 60px;
-            background: rgba(0,0,0,0.5);
-            border-radius: 10px;
+        .game-ad-banner {
+            background: linear-gradient(90deg, rgba(26,26,46,0.95), rgba(42,26,62,0.95));
+            border: 1px solid var(--glass-border);
+            border-radius: 8px;
+            padding: 10px 30px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            backdrop-filter: blur(10px);
         }
 
-        /* Left HUD - Player Info */
+        .game-ad-banner .ad-icon { font-size: 1.5em; }
+        .game-ad-banner .ad-text h3 { font-size: 0.9em; }
+        .game-ad-banner .ad-text p { font-size: 0.75em; }
+        .game-ad-banner .ad-cta { padding: 6px 15px; font-size: 0.75em; }
+
+        /* Left HUD */
         .hud-left {
-            top: 80px;
-            left: 10px;
+            top: 100px;
+            left: 15px;
         }
 
-        .player-stats {
-            background: rgba(0,0,0,0.7);
-            border-radius: 10px;
+        .player-hud {
+            background: var(--glass);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
             padding: 15px;
             min-width: 200px;
+            backdrop-filter: blur(10px);
+        }
+
+        .health-container {
+            margin-bottom: 15px;
+        }
+
+        .health-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.8em;
+            margin-bottom: 5px;
         }
 
         .health-bar {
-            height: 20px;
-            background: rgba(255,255,255,0.2);
-            border-radius: 10px;
+            height: 8px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 4px;
             overflow: hidden;
-            margin-bottom: 10px;
         }
 
         .health-fill {
             height: 100%;
-            background: linear-gradient(90deg, #ff4444, #00ff88);
-            width: 100%;
+            background: linear-gradient(90deg, var(--danger), var(--warning), var(--primary));
+            border-radius: 4px;
             transition: width 0.3s;
         }
 
-        .speed-indicator, .altitude-indicator {
-            display: flex;
-            justify-content: space-between;
-            margin: 5px 0;
-            font-size: 14px;
-        }
-
-        /* Right HUD - Minimap & Leaderboard */
-        .hud-right {
-            top: 80px;
-            right: 10px;
-            display: flex;
-            flex-direction: column;
+        .flight-data {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
             gap: 10px;
         }
 
-        .minimap {
-            width: 180px;
-            height: 180px;
-            background: rgba(0,0,0,0.7);
-            border-radius: 50%;
-            border: 3px solid rgba(0,212,255,0.5);
-            position: relative;
-            overflow: hidden;
+        .data-item {
+            background: rgba(0,0,0,0.3);
+            border-radius: 8px;
+            padding: 10px;
         }
 
-        .minimap-canvas {
+        .data-label {
+            font-size: 0.7em;
+            color: rgba(255,255,255,0.5);
+            text-transform: uppercase;
+        }
+
+        .data-value {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.2em;
+            color: var(--primary);
+        }
+
+        /* Right HUD */
+        .hud-right {
+            top: 100px;
+            right: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            align-items: flex-end;
+        }
+
+        .minimap-container {
+            width: 160px;
+            height: 160px;
+            background: var(--glass);
+            border: 2px solid var(--primary);
+            border-radius: 50%;
+            padding: 5px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 0 30px rgba(0, 255, 170, 0.3);
+        }
+
+        #minimap-canvas {
             width: 100%;
             height: 100%;
+            border-radius: 50%;
         }
 
         .leaderboard {
-            background: rgba(0,0,0,0.7);
-            border-radius: 10px;
+            background: var(--glass);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
             padding: 15px;
             min-width: 180px;
+            backdrop-filter: blur(10px);
         }
 
-        .leaderboard h3 {
-            color: #00d4ff;
-            font-size: 12px;
-            margin-bottom: 10px;
+        .leaderboard-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.8em;
+            color: var(--secondary);
             text-transform: uppercase;
+            margin-bottom: 10px;
+            letter-spacing: 0.1em;
         }
 
         .leaderboard-item {
             display: flex;
             justify-content: space-between;
-            padding: 5px 0;
-            font-size: 12px;
-            border-bottom: 1px solid rgba(255,255,255,0.1);
+            padding: 8px 0;
+            font-size: 0.85em;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
         }
+
+        .leaderboard-item:last-child { border-bottom: none; }
 
         .leaderboard-item.self {
-            color: #00ff88;
+            color: var(--primary);
+            font-weight: 700;
         }
 
-        /* Bottom HUD - Controls Info */
+        .leaderboard-rank {
+            color: rgba(255,255,255,0.4);
+            margin-right: 10px;
+        }
+
+        /* Bottom HUD */
         .hud-bottom {
-            bottom: 10px;
-            left: 10px;
-            right: 10px;
+            bottom: 15px;
+            left: 15px;
+            right: 15px;
             display: flex;
             justify-content: space-between;
             align-items: flex-end;
         }
 
-        .controls-hint {
-            background: rgba(0,0,0,0.7);
-            border-radius: 10px;
+        .controls-info {
+            background: var(--glass);
+            border: 1px solid var(--glass-border);
+            border-radius: 8px;
             padding: 10px 15px;
-            font-size: 12px;
-            color: #888;
+            font-size: 0.8em;
+            backdrop-filter: blur(10px);
         }
 
-        .controls-hint span {
-            color: #00d4ff;
+        .controls-info kbd {
+            background: rgba(0, 255, 170, 0.2);
+            color: var(--primary);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.9em;
         }
 
         .game-timer {
-            background: rgba(0,0,0,0.7);
-            border-radius: 10px;
-            padding: 10px 20px;
-            font-size: 24px;
-            font-weight: bold;
-            color: #00ff88;
+            background: var(--glass);
+            border: 1px solid var(--glass-border);
+            border-radius: 8px;
+            padding: 10px 25px;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.5em;
+            color: var(--primary);
+            backdrop-filter: blur(10px);
         }
 
         .exit-btn {
-            background: rgba(255,68,68,0.8);
+            background: rgba(255, 71, 87, 0.8);
             border: none;
-            border-radius: 10px;
+            border-radius: 8px;
             padding: 10px 20px;
             color: white;
+            font-family: 'Orbitron', sans-serif;
             cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .exit-btn:hover {
+            background: var(--danger);
+            transform: scale(1.05);
         }
 
         /* Chat */
         .chat-container {
             position: fixed;
-            bottom: 60px;
-            left: 10px;
-            width: 300px;
+            bottom: 70px;
+            left: 15px;
+            width: 320px;
+            z-index: 100;
         }
 
         .chat-messages {
-            background: rgba(0,0,0,0.5);
-            border-radius: 10px 10px 0 0;
+            background: var(--glass);
+            border: 1px solid var(--glass-border);
+            border-radius: 8px 8px 0 0;
             padding: 10px;
             max-height: 150px;
             overflow-y: auto;
-            font-size: 12px;
+            backdrop-filter: blur(10px);
         }
 
         .chat-message {
             margin: 5px 0;
+            font-size: 0.85em;
+            animation: chatFade 0.3s ease-out;
         }
 
-        .chat-message .name {
-            color: #00d4ff;
+        @keyframes chatFade {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
-        .chat-input-container {
+        .chat-message .sender {
+            color: var(--secondary);
+            font-weight: 700;
+        }
+
+        .chat-message.system {
+            color: var(--warning);
+            font-style: italic;
+        }
+
+        .chat-input-row {
             display: flex;
         }
 
         .chat-input {
             flex: 1;
-            background: rgba(0,0,0,0.7);
-            border: 1px solid rgba(255,255,255,0.2);
-            border-radius: 0 0 0 10px;
-            padding: 8px;
+            background: rgba(0,0,0,0.8);
+            border: 1px solid var(--glass-border);
+            border-right: none;
+            border-radius: 0 0 0 8px;
+            padding: 10px;
             color: white;
+            font-family: 'Rajdhani', sans-serif;
+        }
+
+        .chat-input:focus {
+            outline: none;
+            border-color: var(--primary);
         }
 
         .chat-send {
-            background: #00d4ff;
+            background: var(--primary);
             border: none;
-            border-radius: 0 0 10px 0;
-            padding: 8px 15px;
-            color: #1a1a2e;
+            border-radius: 0 0 8px 0;
+            padding: 10px 15px;
+            color: var(--dark);
+            font-weight: 700;
             cursor: pointer;
         }
 
@@ -542,26 +875,28 @@
         .mobile-controls {
             display: none;
             position: fixed;
-            bottom: 20px;
+            bottom: 30px;
             left: 0;
             right: 0;
             padding: 0 20px;
             justify-content: space-between;
+            align-items: flex-end;
+            z-index: 100;
         }
 
         .joystick {
             width: 120px;
             height: 120px;
             background: rgba(255,255,255,0.1);
-            border-radius: 50%;
             border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
             position: relative;
         }
 
         .joystick-knob {
             width: 50px;
             height: 50px;
-            background: rgba(0,212,255,0.5);
+            background: rgba(0, 255, 170, 0.6);
             border-radius: 50%;
             position: absolute;
             top: 50%;
@@ -571,76 +906,85 @@
 
         .mobile-buttons {
             display: flex;
-            flex-direction: column;
-            gap: 10px;
+            gap: 15px;
         }
 
         .mobile-btn {
-            width: 60px;
-            height: 60px;
+            width: 70px;
+            height: 70px;
             background: rgba(255,255,255,0.1);
-            border: 2px solid rgba(255,255,255,0.3);
+            border: 2px solid var(--primary);
             border-radius: 50%;
-            color: white;
-            font-size: 12px;
+            color: var(--primary);
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.7em;
+            font-weight: 700;
         }
 
-        @media (max-width: 768px) {
-            .lobby-content {
-                flex-direction: column;
-            }
+        .mobile-btn:active {
+            background: rgba(0, 255, 170, 0.3);
+        }
 
-            .player-setup, .ad-sidebar {
-                width: 100%;
-            }
-
-            .ad-sidebar {
-                height: 100px;
-            }
-
-            .mobile-controls {
-                display: flex;
-            }
-
-            .controls-hint {
-                display: none;
-            }
+        @media (max-width: 900px) {
+            .lobby-content { flex-direction: column; }
+            .player-setup, .ad-sidebar { width: 100%; }
+            .ad-sidebar { flex-direction: row; height: 100px; }
+            .ad-sidebar .ad-unit { flex: 1; }
+            .mobile-controls { display: flex; }
+            .controls-info { display: none; }
+            .chat-container { width: 250px; }
         }
 
         /* Connection Status */
         .connection-status {
             position: fixed;
-            top: 10px;
-            right: 10px;
-            padding: 5px 10px;
-            border-radius: 5px;
-            font-size: 12px;
+            top: 15px;
+            right: 15px;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            font-family: 'Orbitron', sans-serif;
             z-index: 3000;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .connection-status::before {
+            content: '';
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
         }
 
         .connection-status.connected {
-            background: rgba(0,255,136,0.2);
-            color: #00ff88;
+            background: rgba(0, 255, 170, 0.2);
+            color: var(--primary);
         }
+        .connection-status.connected::before { background: var(--primary); }
 
         .connection-status.connecting {
-            background: rgba(255,200,0,0.2);
-            color: #ffc800;
+            background: rgba(255, 165, 2, 0.2);
+            color: var(--warning);
         }
+        .connection-status.connecting::before { background: var(--warning); animation: pulse 1s infinite; }
 
         .connection-status.disconnected {
-            background: rgba(255,68,68,0.2);
-            color: #ff4444;
+            background: rgba(255, 71, 87, 0.2);
+            color: var(--danger);
+        }
+        .connection-status.disconnected::before { background: var(--danger); }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
         }
 
         /* Loading */
         .loading-overlay {
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.9);
+            inset: 0;
+            background: var(--darker);
             display: flex;
             flex-direction: column;
             justify-content: center;
@@ -648,17 +992,30 @@
             z-index: 5000;
         }
 
-        .loading-overlay.hidden {
-            display: none;
+        .loading-overlay.hidden { display: none; }
+
+        .loader {
+            width: 80px;
+            height: 80px;
+            position: relative;
         }
 
-        .loading-spinner {
-            width: 60px;
-            height: 60px;
-            border: 3px solid rgba(0,212,255,0.3);
-            border-top-color: #00d4ff;
+        .loader::before, .loader::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border: 3px solid transparent;
             border-radius: 50%;
+        }
+
+        .loader::before {
+            border-top-color: var(--primary);
             animation: spin 1s linear infinite;
+        }
+
+        .loader::after {
+            border-bottom-color: var(--secondary);
+            animation: spin 1s linear infinite reverse;
         }
 
         @keyframes spin {
@@ -666,209 +1023,356 @@
         }
 
         .loading-text {
-            margin-top: 20px;
-            color: #00d4ff;
+            margin-top: 30px;
+            font-family: 'Orbitron', sans-serif;
+            color: var(--primary);
+            letter-spacing: 0.2em;
+        }
+
+        /* Kill Feed */
+        .kill-feed {
+            position: fixed;
+            top: 100px;
+            right: 200px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            z-index: 100;
+        }
+
+        .kill-item {
+            background: rgba(0,0,0,0.7);
+            padding: 8px 15px;
+            border-radius: 5px;
+            font-size: 0.85em;
+            animation: killFade 3s forwards;
+        }
+
+        @keyframes killFade {
+            0% { opacity: 0; transform: translateX(20px); }
+            10% { opacity: 1; transform: translateX(0); }
+            80% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+
+        .kill-item .killer { color: var(--danger); }
+        .kill-item .victim { color: var(--secondary); }
+
+        /* Crosshair */
+        .crosshair {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        .crosshair::before, .crosshair::after {
+            content: '';
+            position: absolute;
+            background: rgba(255,255,255,0.8);
+        }
+
+        .crosshair::before {
+            width: 20px;
+            height: 2px;
+            left: -10px;
+            top: -1px;
+        }
+
+        .crosshair::after {
+            width: 2px;
+            height: 20px;
+            left: -1px;
+            top: -10px;
+        }
+
+        /* Speed Lines Effect */
+        .speed-lines {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 50;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .speed-lines.active {
+            opacity: 1;
+            background: radial-gradient(ellipse at center, transparent 30%, rgba(255,255,255,0.05) 100%);
         }
     </style>
 </head>
 <body>
-    <!-- Loading Overlay -->
-    <div id="loading-overlay" class="loading-overlay">
-        <div class="loading-spinner"></div>
-        <div class="loading-text">Loading FLY...</div>
+    <!-- Loading -->
+    <div id="loading" class="loading-overlay">
+        <div class="loader"></div>
+        <div class="loading-text">INITIALIZING</div>
     </div>
 
     <!-- Connection Status -->
-    <div id="connection-status" class="connection-status connecting">Connecting...</div>
+    <div id="connection-status" class="connection-status connecting">Connecting</div>
 
-    <!-- Lobby Screen -->
+    <!-- ==================== LOBBY ==================== -->
     <div id="lobby">
+        <div class="lobby-bg"></div>
+
         <div class="lobby-header">
-            <h1>FLY</h1>
-            <p>P2P Multiplayer Flight Game</p>
+            <div class="logo">FLY</div>
+            <div class="tagline">P2P Multiplayer Flight Combat</div>
         </div>
 
+        <!-- Top Ad Banner -->
         <div class="ad-banner top">
-            <span>[ AD SPACE - 728x90 Leaderboard ]</span>
+            <div class="ad-content">
+                <div class="ad-icon">🚀</div>
+                <div class="ad-text">
+                    <h3>Promote Your Startup</h3>
+                    <p>Reach 100,000+ gamers worldwide</p>
+                </div>
+                <a href="#" class="ad-cta">Advertise Here</a>
+            </div>
+            <span class="ad-badge">Sponsored</span>
         </div>
 
         <div class="lobby-content">
-            <!-- Left Panel - Player Setup -->
-            <div class="player-setup">
-                <h2>Player Setup</h2>
+            <!-- Left: Player Setup -->
+            <div class="player-setup glass-panel">
+                <div class="panel-title">Pilot Setup</div>
 
                 <div class="input-group">
                     <label>Callsign</label>
-                    <input type="text" id="player-name" placeholder="Enter your callsign" maxlength="15">
+                    <input type="text" id="player-name" placeholder="Enter callsign..." maxlength="12">
                 </div>
 
                 <div class="input-group">
-                    <label>Aircraft</label>
-                    <select id="aircraft-select">
-                        <option value="cessna">Cessna 172</option>
-                        <option value="jet">Fighter Jet</option>
-                        <option value="cyberpink">Cyberpink</option>
-                    </select>
-                </div>
-
-                <div class="aircraft-preview">
-                    <canvas id="preview-canvas"></canvas>
-                    <div class="aircraft-stats">
-                        <div class="stat">
-                            <div class="stat-label">Max Speed</div>
-                            <div class="stat-value" id="stat-speed">140 kts</div>
+                    <label>Select Aircraft</label>
+                    <div class="aircraft-grid">
+                        <div class="aircraft-card selected" data-aircraft="cessna">
+                            <div class="aircraft-icon">✈️</div>
+                            <div class="aircraft-name">Cessna</div>
                         </div>
-                        <div class="stat">
-                            <div class="stat-label">Max Alt</div>
-                            <div class="stat-value" id="stat-alt">14,000 ft</div>
+                        <div class="aircraft-card" data-aircraft="jet">
+                            <div class="aircraft-icon">🛩️</div>
+                            <div class="aircraft-name">F-16</div>
                         </div>
-                        <div class="stat">
-                            <div class="stat-label">Agility</div>
-                            <div class="stat-value" id="stat-agility">Medium</div>
-                        </div>
-                        <div class="stat">
-                            <div class="stat-label">Weapons</div>
-                            <div class="stat-value" id="stat-weapons">None</div>
+                        <div class="aircraft-card" data-aircraft="cyberpink">
+                            <div class="aircraft-icon">🛸</div>
+                            <div class="aircraft-name">Cyber</div>
                         </div>
                     </div>
                 </div>
 
-                <button class="btn" id="quick-play-btn">Quick Play</button>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <div class="stat-label">Max Speed</div>
+                        <div class="stat-value" id="stat-speed">140 kts</div>
+                        <div class="stat-bar"><div class="stat-fill" id="speed-bar" style="width: 20%"></div></div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Max Alt</div>
+                        <div class="stat-value" id="stat-alt">14,000 ft</div>
+                        <div class="stat-bar"><div class="stat-fill" id="alt-bar" style="width: 30%"></div></div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Agility</div>
+                        <div class="stat-value" id="stat-agility">Medium</div>
+                        <div class="stat-bar"><div class="stat-fill" id="agility-bar" style="width: 50%"></div></div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Firepower</div>
+                        <div class="stat-value" id="stat-weapons">None</div>
+                        <div class="stat-bar"><div class="stat-fill" id="weapons-bar" style="width: 0%"></div></div>
+                    </div>
+                </div>
+
+                <button class="btn btn-primary" id="quick-play-btn">
+                    ▶ QUICK PLAY
+                </button>
             </div>
 
-            <!-- Center Panel - Room List -->
-            <div class="room-list-panel">
-                <div class="room-list-header">
-                    <h2>Game Rooms</h2>
-                    <div>
-                        <button class="btn secondary" id="refresh-btn">Refresh</button>
-                        <button class="btn" id="create-room-btn">Create Room</button>
+            <!-- Center: Room List -->
+            <div class="room-list-panel glass-panel">
+                <div class="room-header">
+                    <div class="panel-title">Game Rooms</div>
+                    <div class="room-actions">
+                        <button class="btn btn-secondary" id="refresh-btn">↻ Refresh</button>
+                        <button class="btn btn-primary" id="create-room-btn">+ Create</button>
                     </div>
                 </div>
 
                 <div class="room-list" id="room-list">
                     <div class="no-rooms">
-                        <p>No rooms available</p>
-                        <p>Create a new room or use Quick Play!</p>
+                        <div class="no-rooms-icon">📡</div>
+                        <p>No active rooms found</p>
+                        <p style="font-size: 0.9em; margin-top: 10px;">Create a room or Quick Play!</p>
                     </div>
                 </div>
             </div>
 
-            <!-- Right Panel - Ad Space -->
+            <!-- Right: Ad Sidebar -->
             <div class="ad-sidebar">
-                <p>[ AD SPACE ]</p>
-                <p>160x600</p>
-                <p>Skyscraper</p>
+                <div class="ad-unit">
+                    <span class="ad-badge">AD</span>
+                    <div class="ad-unit-icon">🎮</div>
+                    <h4>Gaming Gear</h4>
+                    <p>Level up your setup with pro gaming equipment</p>
+                </div>
+                <div class="ad-unit">
+                    <span class="ad-badge">AD</span>
+                    <div class="ad-unit-icon">☁️</div>
+                    <h4>Cloud Hosting</h4>
+                    <p>Deploy your game servers globally</p>
+                </div>
             </div>
         </div>
 
+        <!-- Bottom Ad Banner -->
         <div class="ad-banner bottom">
-            <span>[ AD SPACE - 728x90 Leaderboard ]</span>
+            <div class="ad-content">
+                <div class="ad-icon">⚡</div>
+                <div class="ad-text">
+                    <h3>Build with AI</h3>
+                    <p>Create games like this with Claude Code</p>
+                </div>
+                <a href="https://claude.ai/code" class="ad-cta" target="_blank">Try Free</a>
+            </div>
+            <span class="ad-badge">Sponsored</span>
         </div>
     </div>
 
     <!-- Create Room Modal -->
-    <div id="create-room-modal" class="modal hidden">
+    <div id="create-modal" class="modal">
         <div class="modal-content">
-            <h2>Create Room</h2>
+            <div class="modal-title">Create Room</div>
             <div class="input-group">
                 <label>Room Name</label>
-                <input type="text" id="room-name" placeholder="My Awesome Room" maxlength="30">
+                <input type="text" id="room-name" placeholder="My Room" maxlength="20">
             </div>
-            <div class="input-group">
+            <div class="input-group" style="margin-top: 15px;">
                 <label>Max Players</label>
                 <select id="max-players">
                     <option value="4">4 Players</option>
                     <option value="8" selected>8 Players</option>
                     <option value="12">12 Players</option>
-                    <option value="16">16 Players</option>
                 </select>
             </div>
-            <div class="input-group">
+            <div class="input-group" style="margin-top: 15px;">
                 <label>Game Mode</label>
                 <select id="game-mode">
                     <option value="ffa">Free For All</option>
-                    <option value="team">Team Deathmatch</option>
-                    <option value="race">Air Race</option>
+                    <option value="tdm">Team Deathmatch</option>
                 </select>
             </div>
             <div class="modal-buttons">
-                <button class="btn secondary" id="cancel-create">Cancel</button>
-                <button class="btn" id="confirm-create">Create</button>
+                <button class="btn btn-secondary" id="cancel-create">Cancel</button>
+                <button class="btn btn-primary" id="confirm-create">Create</button>
             </div>
         </div>
     </div>
 
-    <!-- Game Container -->
+    <!-- ==================== GAME ==================== -->
     <div id="game-container">
         <canvas id="game-canvas"></canvas>
 
-        <!-- HUD Top -->
-        <div class="hud hud-top">
-            <div class="ad-banner">[ AD SPACE - 728x60 ]</div>
+        <!-- Crosshair -->
+        <div class="crosshair" id="crosshair"></div>
+
+        <!-- Speed Lines -->
+        <div class="speed-lines" id="speed-lines"></div>
+
+        <!-- Top Ad -->
+        <div class="hud hud-top-ad">
+            <div class="game-ad-banner">
+                <div class="ad-icon">🎯</div>
+                <div class="ad-text">
+                    <h3>Your Ad Here</h3>
+                    <p>Reach active gamers</p>
+                </div>
+                <a href="#" class="ad-cta">Learn More</a>
+            </div>
         </div>
 
-        <!-- HUD Left -->
+        <!-- Left HUD -->
         <div class="hud hud-left">
-            <div class="player-stats">
-                <div class="health-bar">
-                    <div class="health-fill" id="health-fill"></div>
+            <div class="player-hud">
+                <div class="health-container">
+                    <div class="health-label">
+                        <span>HULL</span>
+                        <span id="health-text">100%</span>
+                    </div>
+                    <div class="health-bar">
+                        <div class="health-fill" id="health-fill" style="width: 100%"></div>
+                    </div>
                 </div>
-                <div class="speed-indicator">
-                    <span>Speed</span>
-                    <span id="speed-value">0 kts</span>
-                </div>
-                <div class="altitude-indicator">
-                    <span>Altitude</span>
-                    <span id="altitude-value">0 ft</span>
-                </div>
-                <div class="altitude-indicator">
-                    <span>Kills / Deaths</span>
-                    <span id="kd-value">0 / 0</span>
+                <div class="flight-data">
+                    <div class="data-item">
+                        <div class="data-label">Speed</div>
+                        <div class="data-value" id="speed-value">0</div>
+                    </div>
+                    <div class="data-item">
+                        <div class="data-label">Altitude</div>
+                        <div class="data-value" id="altitude-value">0</div>
+                    </div>
+                    <div class="data-item">
+                        <div class="data-label">Kills</div>
+                        <div class="data-value" id="kills-value">0</div>
+                    </div>
+                    <div class="data-item">
+                        <div class="data-label">Deaths</div>
+                        <div class="data-value" id="deaths-value">0</div>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- HUD Right -->
+        <!-- Right HUD -->
         <div class="hud hud-right">
-            <div class="minimap">
-                <canvas class="minimap-canvas" id="minimap-canvas"></canvas>
+            <div class="minimap-container">
+                <canvas id="minimap-canvas"></canvas>
             </div>
             <div class="leaderboard">
-                <h3>Leaderboard</h3>
+                <div class="leaderboard-title">Leaderboard</div>
                 <div id="leaderboard-list"></div>
             </div>
         </div>
 
+        <!-- Kill Feed -->
+        <div class="kill-feed" id="kill-feed"></div>
+
         <!-- Chat -->
         <div class="chat-container">
             <div class="chat-messages" id="chat-messages"></div>
-            <div class="chat-input-container">
+            <div class="chat-input-row">
                 <input type="text" class="chat-input" id="chat-input" placeholder="Press Enter to chat...">
-                <button class="chat-send" id="chat-send">Send</button>
+                <button class="chat-send" id="chat-send">→</button>
             </div>
         </div>
 
-        <!-- HUD Bottom -->
+        <!-- Bottom HUD -->
         <div class="hud hud-bottom">
-            <div class="controls-hint">
-                <span>Arrow Keys</span> - Fly | <span>W/S</span> - Throttle | <span>Space</span> - Fire | <span>V</span> - Camera | <span>Tab</span> - Scores
+            <div class="controls-info">
+                <kbd>↑↓←→</kbd> Fly &nbsp;
+                <kbd>W</kbd><kbd>S</kbd> Throttle &nbsp;
+                <kbd>SPACE</kbd> Fire &nbsp;
+                <kbd>V</kbd> Camera
             </div>
             <div class="game-timer" id="game-timer">15:00</div>
-            <button class="exit-btn" id="exit-game">Exit Game</button>
+            <button class="exit-btn" id="exit-game">✕ EXIT</button>
         </div>
 
         <!-- Mobile Controls -->
         <div class="mobile-controls" id="mobile-controls">
             <div class="joystick" id="joystick-left">
-                <div class="joystick-knob" id="joystick-knob-left"></div>
+                <div class="joystick-knob" id="knob-left"></div>
             </div>
             <div class="mobile-buttons">
-                <button class="mobile-btn" id="fire-btn">FIRE</button>
-                <button class="mobile-btn" id="boost-btn">BOOST</button>
+                <button class="mobile-btn" id="btn-fire">FIRE</button>
+                <button class="mobile-btn" id="btn-boost">BOOST</button>
             </div>
             <div class="joystick" id="joystick-right">
-                <div class="joystick-knob" id="joystick-knob-right"></div>
+                <div class="joystick-knob" id="knob-right"></div>
             </div>
         </div>
     </div>
