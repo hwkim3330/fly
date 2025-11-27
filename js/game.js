@@ -47,10 +47,13 @@ class FlyGame {
         this.renderer = null;
         this.playerMesh = null;
         this.otherPlayerMeshes = new Map();
-        this.projectiles = [];
+        this.projectiles = [];  // Fast missiles
+        this.flares = [];       // Defensive flares
         this.explosions = [];
 
         this.keys = {};
+        this.lastFireTime = 0;
+        this.lastFlareTime = 0;
         this.cameraMode = 'third';
         this.cameraOffset = new THREE.Vector3(0, 15, -50);
 
@@ -87,17 +90,47 @@ class FlyGame {
         if (type === 'engine') {
             // Continuous engine sound
         } else if (type === 'fire') {
+            // Missile launch - aggressive whoosh sound
+            const osc = ctx.createOscillator();
+            const osc2 = ctx.createOscillator();
+            const gain = ctx.createGain();
+            const filter = ctx.createBiquadFilter();
+
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(800, now);
+            osc.frequency.exponentialRampToValueAtTime(200, now + 0.3);
+
+            osc2.type = 'square';
+            osc2.frequency.setValueAtTime(150, now);
+            osc2.frequency.exponentialRampToValueAtTime(80, now + 0.3);
+
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(2000, now);
+
+            gain.gain.setValueAtTime(0.4, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+
+            osc.connect(filter);
+            osc2.connect(filter);
+            filter.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now);
+            osc2.start(now);
+            osc.stop(now + 0.3);
+            osc2.stop(now + 0.3);
+        } else if (type === 'flare') {
+            // Flare pop sound
             const osc = ctx.createOscillator();
             const gain = ctx.createGain();
-            osc.type = 'sawtooth';
-            osc.frequency.setValueAtTime(200, now);
-            osc.frequency.exponentialRampToValueAtTime(50, now + 0.2);
-            gain.gain.setValueAtTime(0.3, now);
-            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(400, now);
+            osc.frequency.exponentialRampToValueAtTime(100, now + 0.15);
+            gain.gain.setValueAtTime(0.2, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
             osc.connect(gain);
             gain.connect(ctx.destination);
             osc.start(now);
-            osc.stop(now + 0.2);
+            osc.stop(now + 0.15);
         } else if (type === 'explosion') {
             const noise = ctx.createBufferSource();
             const buffer = ctx.createBuffer(1, ctx.sampleRate * 0.5, ctx.sampleRate);
@@ -236,6 +269,11 @@ class FlyGame {
             case 'fire':
                 this.createProjectile(data.position, data.direction, from, data.color);
                 this.playSound('fire');
+                break;
+
+            case 'flare':
+                this.createFlare(data.position, data.direction, from);
+                this.playSound('flare');
                 break;
 
             case 'hit':
@@ -675,6 +713,7 @@ class FlyGame {
 
         this.updateFlight(delta);
         this.updateProjectiles(delta);
+        this.updateFlares(delta);
         this.updateExplosions(delta);
         this.syncOtherPlayers();
         this.updateCamera(delta);
@@ -944,12 +983,17 @@ class FlyGame {
 
     // ==================== COMBAT ====================
 
+    // Fire missile - fast and deadly
     fire() {
         if (this.player.aircraft === 'cessna') return;
 
+        const now = performance.now();
+        if (now - this.lastFireTime < 500) return; // 0.5s cooldown
+        this.lastFireTime = now;
+
         const stats = this.aircraftStats[this.player.aircraft];
         const dir = new THREE.Vector3(0, 0, 1).applyQuaternion(this.playerMesh.quaternion);
-        const pos = this.player.position.clone().add(dir.clone().multiplyScalar(20));
+        const pos = this.player.position.clone().add(dir.clone().multiplyScalar(25));
 
         this.createProjectile(pos.toArray(), dir.toArray(), this.peerId, stats.accentColor);
         this.playSound('fire');
@@ -962,26 +1006,117 @@ class FlyGame {
         });
     }
 
+    // Deploy flare - slow falling decoy
+    deployFlare() {
+        const now = performance.now();
+        if (now - this.lastFlareTime < 1000) return; // 1s cooldown
+        this.lastFlareTime = now;
+
+        const dir = new THREE.Vector3(0, -0.5, -1).applyQuaternion(this.playerMesh.quaternion).normalize();
+        const pos = this.player.position.clone().add(dir.clone().multiplyScalar(10));
+
+        this.createFlare(pos.toArray(), dir.toArray(), this.peerId);
+        this.playSound('flare');
+
+        this.broadcast({
+            type: 'flare',
+            position: pos.toArray(),
+            direction: dir.toArray()
+        });
+    }
+
     createProjectile(pos, dir, owner, color) {
-        const geo = new THREE.SphereGeometry(1.5, 8, 8);
-        const mat = new THREE.MeshBasicMaterial({ color });
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.position.set(...pos);
+        // Create missile mesh - elongated shape
+        const group = new THREE.Group();
 
-        // Trail
-        const trailGeo = new THREE.CylinderGeometry(0.5, 1.5, 10, 8);
+        // Missile body
+        const bodyGeo = new THREE.CylinderGeometry(0.8, 1.2, 8, 8);
+        bodyGeo.rotateX(Math.PI / 2);
+        const bodyMat = new THREE.MeshBasicMaterial({ color: 0x444444 });
+        const body = new THREE.Mesh(bodyGeo, bodyMat);
+        group.add(body);
+
+        // Missile tip
+        const tipGeo = new THREE.ConeGeometry(0.8, 3, 8);
+        tipGeo.rotateX(-Math.PI / 2);
+        const tipMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+        const tip = new THREE.Mesh(tipGeo, tipMat);
+        tip.position.z = 5.5;
+        group.add(tip);
+
+        // Engine flame
+        const flameGeo = new THREE.ConeGeometry(1, 6, 8);
+        flameGeo.rotateX(Math.PI / 2);
+        const flameMat = new THREE.MeshBasicMaterial({ color: 0xff6600, transparent: true, opacity: 0.9 });
+        const flame = new THREE.Mesh(flameGeo, flameMat);
+        flame.position.z = -7;
+        group.add(flame);
+
+        // Smoke trail particles (will be updated)
+        const trailGeo = new THREE.CylinderGeometry(0.3, 1.5, 15, 8);
         trailGeo.rotateX(Math.PI / 2);
-        const trailMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.5 });
+        const trailMat = new THREE.MeshBasicMaterial({ color: 0xaaaaaa, transparent: true, opacity: 0.4 });
         const trail = new THREE.Mesh(trailGeo, trailMat);
-        trail.position.z = -5;
-        mesh.add(trail);
+        trail.position.z = -15;
+        group.add(trail);
 
-        this.scene.add(mesh);
+        group.position.set(...pos);
+
+        // Orient missile in direction of travel
+        const lookDir = new THREE.Vector3(...dir);
+        const targetQuat = new THREE.Quaternion();
+        const matrix = new THREE.Matrix4();
+        matrix.lookAt(new THREE.Vector3(), lookDir, new THREE.Vector3(0, 1, 0));
+        targetQuat.setFromRotationMatrix(matrix);
+        group.quaternion.copy(targetQuat);
+
+        this.scene.add(group);
         this.projectiles.push({
-            mesh,
+            mesh: group,
             direction: new THREE.Vector3(...dir),
             owner,
-            time: 0
+            time: 0,
+            speed: 2500  // VERY FAST - much faster than any aircraft
+        });
+    }
+
+    createFlare(pos, dir, owner) {
+        const group = new THREE.Group();
+
+        // Flare core - bright
+        const coreGeo = new THREE.SphereGeometry(2, 8, 8);
+        const coreMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+        const core = new THREE.Mesh(coreGeo, coreMat);
+        group.add(core);
+
+        // Flare glow
+        const glowGeo = new THREE.SphereGeometry(4, 8, 8);
+        const glowMat = new THREE.MeshBasicMaterial({ color: 0xff8800, transparent: true, opacity: 0.5 });
+        const glow = new THREE.Mesh(glowGeo, glowMat);
+        group.add(glow);
+
+        // Sparks
+        for (let i = 0; i < 5; i++) {
+            const sparkGeo = new THREE.SphereGeometry(0.5, 4, 4);
+            const sparkMat = new THREE.MeshBasicMaterial({ color: 0xffaa00, transparent: true, opacity: 0.8 });
+            const spark = new THREE.Mesh(sparkGeo, sparkMat);
+            spark.userData.offset = new THREE.Vector3(
+                Math.random() - 0.5,
+                Math.random() - 0.5,
+                Math.random() - 0.5
+            ).multiplyScalar(3);
+            group.add(spark);
+        }
+
+        group.position.set(...pos);
+
+        this.scene.add(group);
+        this.flares.push({
+            mesh: group,
+            direction: new THREE.Vector3(...dir),
+            owner,
+            time: 0,
+            speed: 80  // Slow - drifts down
         });
     }
 
@@ -990,23 +1125,32 @@ class FlyGame {
             const p = this.projectiles[i];
             p.time += delta;
 
-            if (p.time > 3) {
+            // Missiles last 4 seconds
+            if (p.time > 4) {
                 this.scene.remove(p.mesh);
                 this.projectiles.splice(i, 1);
                 continue;
             }
 
-            p.mesh.position.add(p.direction.clone().multiplyScalar(500 * delta));
+            // Move at high speed
+            const moveSpeed = p.speed * delta;
+            p.mesh.position.add(p.direction.clone().multiplyScalar(moveSpeed));
+
+            // Animate flame flicker
+            const flame = p.mesh.children[2];
+            if (flame) {
+                flame.scale.setScalar(0.8 + Math.random() * 0.4);
+            }
 
             // Collision with other players
             if (p.owner === this.peerId) {
                 this.otherPlayers.forEach((data, id) => {
                     if (!data.position) return;
-                    const pos = Array.isArray(data.position) ? data.position : [data.position.x, data.position.y, data.position.z];
-                    const dist = p.mesh.position.distanceTo(new THREE.Vector3(...pos));
+                    const targetPos = Array.isArray(data.position) ? data.position : [data.position.x, data.position.y, data.position.z];
+                    const dist = p.mesh.position.distanceTo(new THREE.Vector3(...targetPos));
 
-                    if (dist < 25) {
-                        this.broadcast({ type: 'hit', target: id, shooter: this.peerId, damage: 25 });
+                    if (dist < 30) {
+                        this.broadcast({ type: 'hit', target: id, shooter: this.peerId, damage: 35 });
                         this.createExplosion(p.mesh.position.clone());
                         this.scene.remove(p.mesh);
                         this.projectiles.splice(i, 1);
@@ -1017,8 +1161,8 @@ class FlyGame {
             // Self collision (from others)
             if (p.owner !== this.peerId) {
                 const dist = p.mesh.position.distanceTo(this.player.position);
-                if (dist < 20) {
-                    this.player.health -= 25;
+                if (dist < 25) {
+                    this.player.health -= 35;
                     this.playSound('hit');
                     this.createExplosion(p.mesh.position.clone());
                     this.scene.remove(p.mesh);
@@ -1026,6 +1170,47 @@ class FlyGame {
 
                     if (this.player.health <= 0) this.handleDeath(p.owner);
                 }
+            }
+        }
+    }
+
+    updateFlares(delta) {
+        for (let i = this.flares.length - 1; i >= 0; i--) {
+            const f = this.flares[i];
+            f.time += delta;
+
+            // Flares last 5 seconds
+            if (f.time > 5) {
+                this.scene.remove(f.mesh);
+                this.flares.splice(i, 1);
+                continue;
+            }
+
+            // Slow drift with gravity
+            f.direction.y -= delta * 0.5; // gravity effect
+            const moveSpeed = f.speed * delta;
+            f.mesh.position.add(f.direction.clone().multiplyScalar(moveSpeed));
+
+            // Fade out over time
+            const fadeStart = 3;
+            if (f.time > fadeStart) {
+                const alpha = 1 - (f.time - fadeStart) / 2;
+                f.mesh.children.forEach(c => {
+                    if (c.material) c.material.opacity = alpha * (c.material.opacity > 0.5 ? 1 : 0.5);
+                });
+            }
+
+            // Animate sparks
+            f.mesh.children.forEach((c, idx) => {
+                if (idx > 1 && c.userData.offset) {
+                    c.position.copy(c.userData.offset.clone().multiplyScalar(1 + Math.sin(f.time * 10 + idx) * 0.3));
+                }
+            });
+
+            // Flicker effect
+            const core = f.mesh.children[0];
+            if (core) {
+                core.scale.setScalar(0.9 + Math.random() * 0.2);
             }
         }
     }
@@ -1189,6 +1374,7 @@ class FlyGame {
         this.otherPlayers.clear();
         this.otherPlayerMeshes.clear();
         this.projectiles = [];
+        this.flares = [];
         this.explosions = [];
         this.currentRoom = null;
         this.isHost = false;
@@ -1206,6 +1392,10 @@ class FlyGame {
                 if (e.code === 'Space') {
                     e.preventDefault();
                     this.fire();
+                }
+                if (e.code === 'KeyF') {
+                    e.preventDefault();
+                    this.deployFlare();
                 }
                 if (e.code === 'KeyV') {
                     const modes = ['third', 'cockpit', 'chase'];
@@ -1362,6 +1552,7 @@ class FlyGame {
         );
 
         document.getElementById('btn-fire')?.addEventListener('touchstart', e => { e.preventDefault(); this.fire(); });
+        document.getElementById('btn-flare')?.addEventListener('touchstart', e => { e.preventDefault(); this.deployFlare(); });
         document.getElementById('btn-boost')?.addEventListener('touchstart', e => { e.preventDefault(); this.player.throttle = 1; });
     }
 }
