@@ -1167,6 +1167,69 @@
         .ammo-item .data-label {
             font-size: 0.85em;
         }
+
+        /* Boost Gauge */
+        .boost-gauge {
+            margin-top: 15px;
+            padding-top: 10px;
+            border-top: 1px solid var(--glass-border);
+        }
+
+        .boost-label {
+            font-size: 0.85em;
+            color: var(--secondary);
+            margin-bottom: 5px;
+        }
+
+        .boost-bar {
+            height: 8px;
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .boost-fill {
+            height: 100%;
+            width: 100%;
+            background: var(--secondary);
+            transition: width 0.1s, background 0.2s;
+            border-radius: 4px;
+        }
+
+        /* Spawn Protection */
+        .spawn-protection {
+            position: fixed;
+            top: 20%;
+            left: 50%;
+            transform: translateX(-50%);
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #00ffaa;
+            text-shadow: 0 0 20px #00ffaa;
+            z-index: 250;
+            display: none;
+            animation: spawnPulse 0.5s ease-in-out infinite;
+        }
+
+        @keyframes spawnPulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Damage Float Animation */
+        @keyframes damageFloat {
+            0% { opacity: 1; transform: translateY(0); }
+            100% { opacity: 0; transform: translateY(-50px); }
+        }
+
+        /* Kill Streak Pop Animation */
+        @keyframes killstreakPop {
+            0% { opacity: 0; transform: translateX(-50%) scale(0.5); }
+            20% { opacity: 1; transform: translateX(-50%) scale(1.2); }
+            40% { transform: translateX(-50%) scale(1); }
+            100% { opacity: 0; transform: translateX(-50%) scale(1); }
+        }
     </style>
 </head>
 <body>
@@ -1397,8 +1460,19 @@
                         <div class="data-value" id="flares-value">5</div>
                     </div>
                 </div>
+
+                <!-- Boost Gauge -->
+                <div class="boost-gauge">
+                    <div class="boost-label">⚡ BOOST</div>
+                    <div class="boost-bar">
+                        <div class="boost-fill" id="boost-fill"></div>
+                    </div>
+                </div>
             </div>
         </div>
+
+        <!-- Spawn Protection -->
+        <div class="spawn-protection" id="spawn-protection">INVINCIBLE</div>
 
         <!-- Missile Warning -->
         <div class="missile-warning" id="missile-warning">
@@ -1449,9 +1523,10 @@
                 <div class="joystick-knob" id="knob-left"></div>
             </div>
             <div class="mobile-buttons">
-                <button class="mobile-btn" id="btn-fire">🚀 FIRE</button>
-                <button class="mobile-btn" id="btn-flare">💥 FLARE</button>
-                <button class="mobile-btn" id="btn-boost">⚡ BOOST</button>
+                <button class="mobile-btn" id="btn-fire">🚀 MSL</button>
+                <button class="mobile-btn" id="btn-gun">🔫 GUN</button>
+                <button class="mobile-btn" id="btn-flare">💥 FLR</button>
+                <button class="mobile-btn" id="btn-boost">⚡ BST</button>
             </div>
             <div class="joystick" id="joystick-right">
                 <div class="joystick-knob" id="knob-right"></div>

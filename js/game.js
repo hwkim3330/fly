@@ -71,6 +71,19 @@ class FlyGame {
         this.missiles = 10;  // Limited ammo
         this.flareCount = 5;
         this.vaporTrails = [];
+        this.bullets = [];  // Machine gun bullets
+        this.lastGunTime = 0;
+
+        // Boost system
+        this.boostFuel = 100;
+        this.isBoosting = false;
+
+        // Spawn protection
+        this.spawnProtection = 0;
+
+        // Kill streak
+        this.killStreak = 0;
+        this.lastKillTime = 0;
 
         this.init();
     }
@@ -197,6 +210,52 @@ class FlyGame {
             osc2.start(now);
             osc.stop(now + 0.3);
             osc2.stop(now + 0.3);
+        } else if (type === 'gun') {
+            // Machine gun - rapid short burst
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(150, now);
+            osc.frequency.exponentialRampToValueAtTime(80, now + 0.05);
+            gain.gain.setValueAtTime(0.15, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.05);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now);
+            osc.stop(now + 0.05);
+        } else if (type === 'boost') {
+            // Boost whoosh
+            const noise = ctx.createBufferSource();
+            const buffer = ctx.createBuffer(1, ctx.sampleRate * 0.3, ctx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < data.length; i++) {
+                data[i] = Math.random() * 2 - 1;
+            }
+            noise.buffer = buffer;
+            const filter = ctx.createBiquadFilter();
+            filter.type = 'bandpass';
+            filter.frequency.value = 800;
+            const gain = ctx.createGain();
+            gain.gain.setValueAtTime(0.2, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+            noise.connect(filter);
+            filter.connect(gain);
+            gain.connect(ctx.destination);
+            noise.start(now);
+        } else if (type === 'killstreak') {
+            // Kill streak fanfare
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(523, now);
+            osc.frequency.setValueAtTime(659, now + 0.1);
+            osc.frequency.setValueAtTime(784, now + 0.2);
+            gain.gain.setValueAtTime(0.3, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now);
+            osc.stop(now + 0.4);
         } else if (type === 'flare') {
             // Flare pop sound
             const osc = ctx.createOscillator();
@@ -355,6 +414,11 @@ class FlyGame {
                 this.playSound('flare');
                 break;
 
+            case 'gun':
+                this.createBullet(data.position, data.direction, from);
+                this.playSound('gun');
+                break;
+
             case 'hit':
                 if (data.target === this.peerId) {
                     this.player.health -= data.damage;
@@ -365,7 +429,10 @@ class FlyGame {
 
             case 'death':
                 this.addKillFeed(data.killerName, data.victimName);
-                if (data.killer === this.peerId) this.player.kills++;
+                if (data.killer === this.peerId) {
+                    this.player.kills++;
+                    this.checkKillStreak();
+                }
                 break;
 
             case 'chat':
@@ -797,10 +864,13 @@ class FlyGame {
 
         this.updateFlight(delta);
         this.updateProjectiles(delta);
+        this.updateBullets(delta);
         this.updateFlares(delta);
         this.updateExplosions(delta);
         this.updateVaporTrails(delta);
         this.updateMissileWarning();
+        this.updateBoost(delta);
+        this.updateSpawnProtection(delta);
         this.syncOtherPlayers();
         this.updateCamera(delta);
         this.updateHUD();
@@ -808,6 +878,11 @@ class FlyGame {
         this.updateTimer(delta);
         this.updateEngineSound();
         this.updateAfterburner();
+
+        // Continuous gun fire while holding G or mobile button
+        if ((this.keys['KeyG'] || this.mobileGunFiring) && this.state === 'playing') {
+            this.fireGun();
+        }
 
         // Broadcast at ~20Hz
         if (now - this.lastBroadcast > 50) {
@@ -929,6 +1004,20 @@ class FlyGame {
         if (flaresEl) {
             flaresEl.textContent = this.flareCount;
             flaresEl.style.color = this.flareCount <= 1 ? '#ff4757' : '#ffa502';
+        }
+
+        // Boost gauge
+        const boostFill = document.getElementById('boost-fill');
+        if (boostFill) {
+            boostFill.style.width = `${this.boostFuel}%`;
+            boostFill.style.background = this.isBoosting ? '#00ffaa' : '#00d4ff';
+        }
+
+        // Spawn protection indicator
+        const spawnEl = document.getElementById('spawn-protection');
+        if (spawnEl) {
+            spawnEl.style.display = this.spawnProtection > 0 ? 'block' : 'none';
+            spawnEl.textContent = `INVINCIBLE ${this.spawnProtection.toFixed(1)}s`;
         }
 
         this.updateLeaderboard();
@@ -1128,6 +1217,218 @@ class FlyGame {
             position: pos.toArray(),
             direction: dir.toArray()
         });
+    }
+
+    // Machine gun - unlimited, rapid fire, low damage
+    fireGun() {
+        if (this.player.aircraft === 'cessna') return;
+
+        const now = performance.now();
+        if (now - this.lastGunTime < 80) return; // Rapid fire
+        this.lastGunTime = now;
+
+        const dir = new THREE.Vector3(0, 0, 1).applyQuaternion(this.playerMesh.quaternion);
+        // Slight spread
+        dir.x += (Math.random() - 0.5) * 0.05;
+        dir.y += (Math.random() - 0.5) * 0.05;
+        dir.normalize();
+
+        const pos = this.player.position.clone().add(dir.clone().multiplyScalar(20));
+
+        this.createBullet(pos.toArray(), dir.toArray(), this.peerId);
+        this.playSound('gun');
+
+        this.broadcast({
+            type: 'gun',
+            position: pos.toArray(),
+            direction: dir.toArray()
+        });
+    }
+
+    createBullet(pos, dir, owner) {
+        const geo = new THREE.SphereGeometry(0.5, 4, 4);
+        const mat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(...pos);
+
+        // Tracer trail
+        const trailGeo = new THREE.CylinderGeometry(0.2, 0.5, 5, 4);
+        trailGeo.rotateX(Math.PI / 2);
+        const trailMat = new THREE.MeshBasicMaterial({ color: 0xffaa00, transparent: true, opacity: 0.6 });
+        const trail = new THREE.Mesh(trailGeo, trailMat);
+        trail.position.z = -2.5;
+        mesh.add(trail);
+
+        this.scene.add(mesh);
+        this.bullets.push({
+            mesh,
+            direction: new THREE.Vector3(...dir),
+            owner,
+            time: 0,
+            speed: 3500  // Very fast
+        });
+    }
+
+    updateBullets(delta) {
+        for (let i = this.bullets.length - 1; i >= 0; i--) {
+            const b = this.bullets[i];
+            b.time += delta;
+
+            if (b.time > 1.5) {  // Short range
+                this.scene.remove(b.mesh);
+                this.bullets.splice(i, 1);
+                continue;
+            }
+
+            const moveSpeed = b.speed * delta;
+            b.mesh.position.add(b.direction.clone().multiplyScalar(moveSpeed));
+
+            // Collision with others
+            if (b.owner === this.peerId) {
+                this.otherPlayers.forEach((data, id) => {
+                    if (!data.position) return;
+                    const targetPos = Array.isArray(data.position) ? data.position : [data.position.x, data.position.y, data.position.z];
+                    const dist = b.mesh.position.distanceTo(new THREE.Vector3(...targetPos));
+
+                    if (dist < 20) {
+                        this.broadcast({ type: 'hit', target: id, shooter: this.peerId, damage: 8 });
+                        this.createDamageNumber(b.mesh.position.clone(), 8);
+                        this.scene.remove(b.mesh);
+                        this.bullets.splice(i, 1);
+                    }
+                });
+            }
+
+            // Self hit
+            if (b.owner !== this.peerId && this.spawnProtection <= 0) {
+                const dist = b.mesh.position.distanceTo(this.player.position);
+                if (dist < 15) {
+                    this.player.health -= 8;
+                    this.playSound('hit');
+                    this.showHitIndicator();
+                    this.createDamageNumber(this.player.position.clone(), 8);
+                    this.scene.remove(b.mesh);
+                    this.bullets.splice(i, 1);
+
+                    if (this.player.health <= 0) this.handleDeath(b.owner);
+                }
+            }
+        }
+    }
+
+    // Boost system
+    activateBoost() {
+        if (this.boostFuel <= 0) return;
+        if (!this.isBoosting) {
+            this.isBoosting = true;
+            this.playSound('boost');
+        }
+    }
+
+    deactivateBoost() {
+        this.isBoosting = false;
+    }
+
+    updateBoost(delta) {
+        if (this.isBoosting && this.boostFuel > 0) {
+            this.boostFuel -= delta * 30;  // Drains in ~3 seconds
+            this.player.throttle = Math.min(1.5, this.player.throttle + delta * 2);
+        } else {
+            this.isBoosting = false;
+            // Recharge when not boosting
+            if (this.boostFuel < 100) {
+                this.boostFuel = Math.min(100, this.boostFuel + delta * 15);
+            }
+        }
+    }
+
+    // Spawn protection
+    updateSpawnProtection(delta) {
+        if (this.spawnProtection > 0) {
+            this.spawnProtection -= delta;
+
+            // Blink effect
+            if (this.playerMesh) {
+                this.playerMesh.visible = Math.floor(this.spawnProtection * 10) % 2 === 0;
+            }
+        } else if (this.playerMesh) {
+            this.playerMesh.visible = true;
+        }
+    }
+
+    // Damage numbers
+    createDamageNumber(pos, damage) {
+        const div = document.createElement('div');
+        div.className = 'damage-number';
+        div.textContent = `-${damage}`;
+        div.style.cssText = `
+            position: fixed;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #ff4757;
+            text-shadow: 0 0 10px #ff4757;
+            pointer-events: none;
+            z-index: 300;
+            animation: damageFloat 1s ease-out forwards;
+        `;
+
+        // Convert 3D to screen position
+        const vec = pos.clone().project(this.camera);
+        const x = (vec.x * 0.5 + 0.5) * window.innerWidth;
+        const y = (-vec.y * 0.5 + 0.5) * window.innerHeight;
+        div.style.left = x + 'px';
+        div.style.top = y + 'px';
+
+        document.body.appendChild(div);
+        setTimeout(() => div.remove(), 1000);
+    }
+
+    // Kill streak
+    checkKillStreak() {
+        const now = performance.now();
+        if (now - this.lastKillTime < 5000) {
+            this.killStreak++;
+        } else {
+            this.killStreak = 1;
+        }
+        this.lastKillTime = now;
+
+        if (this.killStreak >= 3) {
+            this.showKillStreak(this.killStreak);
+            this.playSound('killstreak');
+        }
+    }
+
+    showKillStreak(count) {
+        const messages = {
+            3: 'TRIPLE KILL!',
+            4: 'QUAD KILL!',
+            5: 'RAMPAGE!',
+            6: 'UNSTOPPABLE!',
+            7: 'GODLIKE!'
+        };
+        const msg = messages[Math.min(count, 7)] || 'GODLIKE!';
+
+        const div = document.createElement('div');
+        div.className = 'killstreak-announce';
+        div.textContent = msg;
+        div.style.cssText = `
+            position: fixed;
+            top: 30%;
+            left: 50%;
+            transform: translateX(-50%);
+            font-family: 'Orbitron', sans-serif;
+            font-size: 3em;
+            font-weight: 900;
+            color: #ffa502;
+            text-shadow: 0 0 30px #ffa502, 0 0 60px #ff6600;
+            z-index: 400;
+            animation: killstreakPop 2s ease-out forwards;
+        `;
+
+        document.body.appendChild(div);
+        setTimeout(() => div.remove(), 2000);
     }
 
     createProjectile(pos, dir, owner, color) {
@@ -1491,7 +1792,12 @@ class FlyGame {
 
         this.addKillFeed(killerName, this.player.name);
 
-        // Respawn
+        // Reset kill streak
+        this.killStreak = 0;
+
+        // Respawn with protection
+        this.spawnProtection = 3;  // 3 seconds invincibility
+        this.boostFuel = 100;
         this.player.position.set(
             Math.random() * 1000 - 500,
             200 + Math.random() * 100,
@@ -1589,6 +1895,7 @@ class FlyGame {
         this.otherPlayers.clear();
         this.otherPlayerMeshes.clear();
         this.projectiles = [];
+        this.bullets = [];
         this.flares = [];
         this.explosions = [];
         this.vaporTrails = [];
@@ -1613,6 +1920,10 @@ class FlyGame {
                     e.preventDefault();
                     this.deployFlare();
                 }
+                if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
+                    e.preventDefault();
+                    this.activateBoost();
+                }
                 if (e.code === 'KeyV') {
                     const modes = ['third', 'cockpit', 'chase'];
                     this.cameraMode = modes[(modes.indexOf(this.cameraMode) + 1) % modes.length];
@@ -1631,7 +1942,12 @@ class FlyGame {
             }
         });
 
-        document.addEventListener('keyup', e => this.keys[e.code] = false);
+        document.addEventListener('keyup', e => {
+            this.keys[e.code] = false;
+            if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
+                this.deactivateBoost();
+            }
+        });
 
         // Player name
         const nameInput = document.getElementById('player-name');
@@ -1768,8 +2084,11 @@ class FlyGame {
         );
 
         document.getElementById('btn-fire')?.addEventListener('touchstart', e => { e.preventDefault(); this.fire(); });
+        document.getElementById('btn-gun')?.addEventListener('touchstart', e => { e.preventDefault(); this.mobileGunFiring = true; });
+        document.getElementById('btn-gun')?.addEventListener('touchend', e => { e.preventDefault(); this.mobileGunFiring = false; });
         document.getElementById('btn-flare')?.addEventListener('touchstart', e => { e.preventDefault(); this.deployFlare(); });
-        document.getElementById('btn-boost')?.addEventListener('touchstart', e => { e.preventDefault(); this.player.throttle = 1; });
+        document.getElementById('btn-boost')?.addEventListener('touchstart', e => { e.preventDefault(); this.activateBoost(); });
+        document.getElementById('btn-boost')?.addEventListener('touchend', e => { e.preventDefault(); this.deactivateBoost(); });
     }
 }
 
