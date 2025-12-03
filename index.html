@@ -1102,6 +1102,71 @@
             opacity: 1;
             background: radial-gradient(ellipse at center, transparent 30%, rgba(255,255,255,0.05) 100%);
         }
+
+        /* Missile Warning */
+        .missile-warning {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 200;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.1s;
+        }
+
+        .missile-warning.active {
+            opacity: 1;
+            animation: warningPulse 0.3s ease-in-out infinite;
+        }
+
+        .warning-text {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 2em;
+            font-weight: 900;
+            color: #ff0000;
+            text-shadow: 0 0 20px #ff0000, 0 0 40px #ff0000;
+            padding: 15px 30px;
+            border: 3px solid #ff0000;
+            background: rgba(255, 0, 0, 0.2);
+            border-radius: 5px;
+        }
+
+        @keyframes warningPulse {
+            0%, 100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+            50% { opacity: 0.6; transform: translate(-50%, -50%) scale(1.05); }
+        }
+
+        /* Hit Indicator */
+        .hit-indicator {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 150;
+            opacity: 0;
+            background: radial-gradient(ellipse at center, transparent 30%, rgba(255, 0, 0, 0.4) 100%);
+            border: 8px solid rgba(255, 0, 0, 0.6);
+            transition: opacity 0.05s;
+        }
+
+        .hit-indicator.active {
+            opacity: 1;
+            animation: hitFlash 0.2s ease-out;
+        }
+
+        @keyframes hitFlash {
+            0% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+
+        /* Ammo display styling */
+        .ammo-item .data-value {
+            color: var(--warning);
+        }
+
+        .ammo-item .data-label {
+            font-size: 0.85em;
+        }
     </style>
 </head>
 <body>
@@ -1323,9 +1388,25 @@
                         <div class="data-label">Deaths</div>
                         <div class="data-value" id="deaths-value">0</div>
                     </div>
+                    <div class="data-item ammo-item">
+                        <div class="data-label">🚀 Missiles</div>
+                        <div class="data-value" id="missiles-value">10</div>
+                    </div>
+                    <div class="data-item ammo-item">
+                        <div class="data-label">💥 Flares</div>
+                        <div class="data-value" id="flares-value">5</div>
+                    </div>
                 </div>
             </div>
         </div>
+
+        <!-- Missile Warning -->
+        <div class="missile-warning" id="missile-warning">
+            <div class="warning-text">⚠️ MISSILE INCOMING ⚠️</div>
+        </div>
+
+        <!-- Hit Indicator -->
+        <div class="hit-indicator" id="hit-indicator"></div>
 
         <!-- Right HUD -->
         <div class="hud hud-right">

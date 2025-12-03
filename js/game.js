@@ -64,6 +64,13 @@ class FlyGame {
         // Audio
         this.audioCtx = null;
         this.sounds = {};
+        this.engineNode = null;
+        this.engineGain = null;
+
+        // Combat
+        this.missiles = 10;  // Limited ammo
+        this.flareCount = 5;
+        this.vaporTrails = [];
 
         this.init();
     }
@@ -79,6 +86,78 @@ class FlyGame {
 
     initAudio() {
         this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        this.setupEngineSound();
+    }
+
+    setupEngineSound() {
+        if (!this.audioCtx) return;
+
+        const ctx = this.audioCtx;
+
+        // Create engine oscillators
+        this.engineOsc1 = ctx.createOscillator();
+        this.engineOsc2 = ctx.createOscillator();
+        this.engineNoise = ctx.createBufferSource();
+
+        // Create noise buffer
+        const noiseBuffer = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+        const noiseData = noiseBuffer.getChannelData(0);
+        for (let i = 0; i < noiseData.length; i++) {
+            noiseData[i] = Math.random() * 2 - 1;
+        }
+        this.engineNoise.buffer = noiseBuffer;
+        this.engineNoise.loop = true;
+
+        // Engine characteristics
+        this.engineOsc1.type = 'sawtooth';
+        this.engineOsc1.frequency.value = 80;
+        this.engineOsc2.type = 'triangle';
+        this.engineOsc2.frequency.value = 120;
+
+        // Filter for engine rumble
+        this.engineFilter = ctx.createBiquadFilter();
+        this.engineFilter.type = 'lowpass';
+        this.engineFilter.frequency.value = 300;
+
+        // Gain control
+        this.engineGain = ctx.createGain();
+        this.engineGain.gain.value = 0;
+
+        // Connect
+        this.engineOsc1.connect(this.engineFilter);
+        this.engineOsc2.connect(this.engineFilter);
+        this.engineNoise.connect(this.engineFilter);
+        this.engineFilter.connect(this.engineGain);
+        this.engineGain.connect(ctx.destination);
+    }
+
+    startEngineSound() {
+        if (!this.audioCtx || this.engineStarted) return;
+        try {
+            this.engineOsc1.start();
+            this.engineOsc2.start();
+            this.engineNoise.start();
+            this.engineStarted = true;
+        } catch (e) {}
+    }
+
+    updateEngineSound() {
+        if (!this.engineGain || !this.engineStarted) return;
+
+        const throttle = this.player.throttle;
+        const speed = this.player.speed;
+        const stats = this.aircraftStats[this.player.aircraft];
+        const maxSpeed = stats.maxSpeed / 10;
+
+        // Volume based on throttle
+        const targetGain = 0.03 + throttle * 0.07;
+        this.engineGain.gain.value += (targetGain - this.engineGain.gain.value) * 0.1;
+
+        // Frequency based on speed
+        const freqMult = 0.8 + (speed / maxSpeed) * 0.6;
+        this.engineOsc1.frequency.value = 80 * freqMult;
+        this.engineOsc2.frequency.value = 120 * freqMult;
+        this.engineFilter.frequency.value = 200 + throttle * 400;
     }
 
     playSound(type) {
@@ -694,6 +773,11 @@ class FlyGame {
         this.player.position.set(0, 150, -500);
         this.player.rotation.set(0, 0, 0);
         this.player.health = 100;
+        this.missiles = 10;
+        this.flareCount = 5;
+
+        // Start engine sound
+        this.startEngineSound();
 
         this.broadcast({
             type: 'player_join',
@@ -715,11 +799,15 @@ class FlyGame {
         this.updateProjectiles(delta);
         this.updateFlares(delta);
         this.updateExplosions(delta);
+        this.updateVaporTrails(delta);
+        this.updateMissileWarning();
         this.syncOtherPlayers();
         this.updateCamera(delta);
         this.updateHUD();
         this.updateMinimap();
         this.updateTimer(delta);
+        this.updateEngineSound();
+        this.updateAfterburner();
 
         // Broadcast at ~20Hz
         if (now - this.lastBroadcast > 50) {
@@ -830,6 +918,18 @@ class FlyGame {
         document.getElementById('altitude-value').textContent = Math.round(this.player.position.y * 10);
         document.getElementById('kills-value').textContent = this.player.kills;
         document.getElementById('deaths-value').textContent = this.player.deaths;
+
+        // Ammo display
+        const missilesEl = document.getElementById('missiles-value');
+        const flaresEl = document.getElementById('flares-value');
+        if (missilesEl) {
+            missilesEl.textContent = this.missiles;
+            missilesEl.style.color = this.missiles <= 2 ? '#ff4757' : '#ffa502';
+        }
+        if (flaresEl) {
+            flaresEl.textContent = this.flareCount;
+            flaresEl.style.color = this.flareCount <= 1 ? '#ff4757' : '#ffa502';
+        }
 
         this.updateLeaderboard();
     }
@@ -986,10 +1086,12 @@ class FlyGame {
     // Fire missile - fast and deadly
     fire() {
         if (this.player.aircraft === 'cessna') return;
+        if (this.missiles <= 0) return;
 
         const now = performance.now();
         if (now - this.lastFireTime < 500) return; // 0.5s cooldown
         this.lastFireTime = now;
+        this.missiles--;
 
         const stats = this.aircraftStats[this.player.aircraft];
         const dir = new THREE.Vector3(0, 0, 1).applyQuaternion(this.playerMesh.quaternion);
@@ -1008,9 +1110,12 @@ class FlyGame {
 
     // Deploy flare - slow falling decoy
     deployFlare() {
+        if (this.flareCount <= 0) return;
+
         const now = performance.now();
         if (now - this.lastFlareTime < 1000) return; // 1s cooldown
         this.lastFlareTime = now;
+        this.flareCount--;
 
         const dir = new THREE.Vector3(0, -0.5, -1).applyQuaternion(this.playerMesh.quaternion).normalize();
         const pos = this.player.position.clone().add(dir.clone().multiplyScalar(10));
@@ -1164,6 +1269,7 @@ class FlyGame {
                 if (dist < 25) {
                     this.player.health -= 35;
                     this.playSound('hit');
+                    this.showHitIndicator();
                     this.createExplosion(p.mesh.position.clone());
                     this.scene.remove(p.mesh);
                     this.projectiles.splice(i, 1);
@@ -1259,9 +1365,118 @@ class FlyGame {
         }
     }
 
+    // Vapor trails behind aircraft
+    updateVaporTrails(delta) {
+        if (!this.playerMesh) return;
+
+        const speed = this.player.speed;
+        const stats = this.aircraftStats[this.player.aircraft];
+        const maxSpeed = stats.maxSpeed / 10;
+
+        // Create trail at high speed
+        if (speed > maxSpeed * 0.5 && Math.random() < 0.3) {
+            const trailGeo = new THREE.SphereGeometry(1, 4, 4);
+            const trailMat = new THREE.MeshBasicMaterial({
+                color: 0xffffff,
+                transparent: true,
+                opacity: 0.5
+            });
+            const trail = new THREE.Mesh(trailGeo, trailMat);
+
+            // Position at wing tips
+            const offset = Math.random() > 0.5 ? 18 : -18;
+            const wingPos = new THREE.Vector3(offset, 0, -5);
+            wingPos.applyQuaternion(this.playerMesh.quaternion);
+            trail.position.copy(this.player.position).add(wingPos);
+
+            this.scene.add(trail);
+            this.vaporTrails.push({ mesh: trail, time: 0 });
+        }
+
+        // Update existing trails
+        for (let i = this.vaporTrails.length - 1; i >= 0; i--) {
+            const t = this.vaporTrails[i];
+            t.time += delta;
+
+            if (t.time > 2) {
+                this.scene.remove(t.mesh);
+                this.vaporTrails.splice(i, 1);
+                continue;
+            }
+
+            t.mesh.material.opacity = 0.5 * (1 - t.time / 2);
+            t.mesh.scale.multiplyScalar(1 + delta * 0.5);
+        }
+    }
+
+    // Afterburner effect at high throttle
+    updateAfterburner() {
+        if (!this.playerMesh) return;
+
+        // Find or create afterburner
+        let afterburner = this.playerMesh.getObjectByName('afterburner');
+        if (!afterburner) {
+            const abGeo = new THREE.ConeGeometry(2, 15, 8);
+            abGeo.rotateX(Math.PI / 2);
+            const abMat = new THREE.MeshBasicMaterial({
+                color: 0x00aaff,
+                transparent: true,
+                opacity: 0
+            });
+            afterburner = new THREE.Mesh(abGeo, abMat);
+            afterburner.name = 'afterburner';
+            afterburner.position.z = -20;
+            this.playerMesh.add(afterburner);
+        }
+
+        // Show at high throttle
+        const intensity = Math.max(0, (this.player.throttle - 0.7) / 0.3);
+        afterburner.material.opacity = intensity * 0.8;
+        afterburner.scale.setScalar(0.8 + Math.random() * 0.4);
+
+        // Color shifts from blue to white at max
+        const hue = 0.55 - intensity * 0.1;
+        afterburner.material.color.setHSL(hue, 1, 0.5 + intensity * 0.3);
+    }
+
+    // Missile proximity warning
+    updateMissileWarning() {
+        const warningEl = document.getElementById('missile-warning');
+        if (!warningEl) return;
+
+        let closestDist = Infinity;
+
+        // Check all projectiles not owned by player
+        this.projectiles.forEach(p => {
+            if (p.owner !== this.peerId) {
+                const dist = p.mesh.position.distanceTo(this.player.position);
+                if (dist < closestDist) closestDist = dist;
+            }
+        });
+
+        // Show warning if missile within 200 units
+        if (closestDist < 200) {
+            warningEl.classList.add('active');
+            warningEl.style.animationDuration = `${0.1 + (closestDist / 200) * 0.4}s`;
+        } else {
+            warningEl.classList.remove('active');
+        }
+    }
+
+    // Screen flash when hit
+    showHitIndicator() {
+        const hitEl = document.getElementById('hit-indicator');
+        if (hitEl) {
+            hitEl.classList.add('active');
+            setTimeout(() => hitEl.classList.remove('active'), 200);
+        }
+    }
+
     handleDeath(killerId) {
         this.player.deaths++;
         this.player.health = 100;
+        this.missiles = 10;  // Refill ammo on respawn
+        this.flareCount = 5;
 
         const killerData = this.otherPlayers.get(killerId);
         const killerName = killerData?.name || 'Unknown';
@@ -1376,6 +1591,7 @@ class FlyGame {
         this.projectiles = [];
         this.flares = [];
         this.explosions = [];
+        this.vaporTrails = [];
         this.currentRoom = null;
         this.isHost = false;
         this.gameTime = 15 * 60;
